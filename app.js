@@ -1,3 +1,109 @@
-const $=id=>document.getElementById(id); const esc=s=>String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-async function go(){const q=$('q').value.trim()||'archaeology';$('status').innerHTML='🔎 A pesquisar agora…';$('results').innerHTML='';try{const p=new URLSearchParams({q,region:$('region').value,category:$('category').value});const r=await fetch('/api/search?'+p);const j=await r.json();$('status').innerHTML=`Pesquisa concluída: <b>${j.results.length}</b> resultados API. ${j.portal_count} portais oficiais disponíveis.`;let h=j.results.map(x=>`<article class="card"><span class="score">${x.score}/100</span><div class="title">${esc(x.title)}</div><div class="meta">${esc(x.source)} · ${esc(x.date)} ${x.buyer?'· '+esc(x.buyer):''}</div><span class="badge">${esc(x.category)}</span><p><a href="${esc(x.url)}" target="_blank" rel="noopener">Abrir concurso ↗</a></p></article>`).join('');const s=await fetch('/api/sources').then(r=>r.json());h+=`<section class="card"><div class="title">Portais oficiais complementares</div><p>Alguns portais não disponibilizam uma API pública uniforme; ficam aqui acessíveis diretamente para pesquisa.</p><div class="sources">${s.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)} — ${esc(x.region)} ↗</a>`).join('')}</div></section>`;$('results').innerHTML=h}catch(e){$('status').innerHTML='Não foi possível contactar o servidor Radar. Verifica o endereço de alojamento.'}}
-$('go').onclick=go;
+const API = 'https://arqueologia-radar.onrender.com';
+
+const $ = id => document.getElementById(id);
+
+const esc = s =>
+  String(s ?? '').replace(/[&<>"]/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;'
+  }[c]));
+
+async function go() {
+  const q = $('q').value.trim() || 'archaeology';
+
+  $('status').innerHTML = '🔎 A pesquisar agora…';
+  $('results').innerHTML = '';
+
+  try {
+    const params = new URLSearchParams({
+      q: q,
+      limit: '50'
+    });
+
+    const response = await fetch(
+      `${API}/api/opportunities?${params.toString()}`
+    );
+
+    if (!response.ok) {
+      throw new Error('Erro do servidor');
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    const results = data.results || [];
+
+    $('status').innerHTML =
+      `Pesquisa concluída: <b>${results.length}</b> resultados encontrados.`;
+
+    if (!results.length) {
+      $('results').innerHTML = `
+        <section class="card">
+          <div class="title">Nenhum resultado encontrado</div>
+          <p>Tenta outra expressão, por exemplo:
+          <b>archaeology</b>, <b>archaeological</b> ou
+          <b>cultural heritage</b>.</p>
+        </section>`;
+      return;
+    }
+
+    $('results').innerHTML = results.map(x => `
+      <article class="card">
+        <span class="score">${esc(x.relevance)}/100</span>
+
+        <div class="title">
+          ${esc(x.title || 'Sem título')}
+        </div>
+
+        <div class="meta">
+          ${esc(x.source || 'TED')}
+          ${x.country ? ' · ' + esc(x.country) : ''}
+          ${x.deadline ? ' · Prazo: ' + esc(x.deadline) : ''}
+        </div>
+
+        ${x.buyer ? `
+          <div class="meta">
+            Entidade: ${esc(x.buyer)}
+          </div>` : ''}
+
+        <span class="badge">
+          Arqueologia
+        </span>
+
+        ${x.description ? `
+          <p>${esc(x.description)}</p>` : ''}
+
+        ${x.url ? `
+          <p>
+            <a href="${esc(x.url)}"
+               target="_blank"
+               rel="noopener">
+              Abrir concurso ↗️
+            </a>
+          </p>` : ''}
+      </article>
+    `).join('');
+
+  } catch (error) {
+    console.error(error);
+
+    $('status').innerHTML =
+      '❌ Não foi possível contactar o servidor Radar.';
+
+    $('results').innerHTML = `
+      <section class="card">
+        <div class="title">Erro de ligação</div>
+        <p>
+          O servidor está online, mas a pesquisa não conseguiu obter
+          resultados. Vamos verificar a ligação ao TED.
+        </p>
+      </section>`;
+  }
+}
+
+$('go').onclick = go;
