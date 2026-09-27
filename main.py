@@ -262,7 +262,6 @@ def health():
 def home():
     return FileResponse(ROOT / 'web/index.html')
 
-
 @app.get('/app.js')
 def js():
     return FileResponse(ROOT / 'web/app.js', media_type='application/javascript')
