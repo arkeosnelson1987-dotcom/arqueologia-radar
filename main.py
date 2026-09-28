@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 import requests
 import re
@@ -103,6 +103,10 @@ ARCH = [
     "archaeological investigation",
     "archaeological works",
     "archaeological services",
+    "archaeological research",
+    "archaeological excavation",
+    "heritage impact assessment",
+    "archaeological supervision",
 ]
 
 MAJOR = [
@@ -145,15 +149,6 @@ def cutoff_date():
 
 
 def parse_publication_date(value):
-    """
-    Extrai apenas a parte YYYY-MM-DD.
-    Funciona com:
-    2026-09-28
-    2026-09-28T10:30:00
-    2026-09-28+01:00
-    2026-09-28T10:30:00Z
-    """
-
     if not value:
         return None
 
@@ -333,16 +328,17 @@ def build_ted_query(q):
     if not q:
         q = "archaeology"
 
-    return f'FT~("{q}")'
+    return f'FT~({q})'
 
 
 # ============================================================
 # CLASSIFICAÇÃO
 # ============================================================
 
-def classify(text):
+def classify(text, cpv=""):
 
     t = text.lower()
+    c = cpv.lower()
 
     archaeology_matches = [
         word
@@ -356,6 +352,13 @@ def classify(text):
         if word in t
     ]
 
+    # CPV específico relacionado com serviços arqueológicos
+    archaeological_cpv = (
+        "71351914"
+    )
+
+    direct_cpv = archaeological_cpv in c
+
     a = len(
         archaeology_matches
     )
@@ -364,13 +367,23 @@ def classify(text):
         major_matches
     )
 
-    if a >= 2:
+    if direct_cpv or a >= 2:
 
         return (
             "Arqueologia direta",
             min(
                 100,
-                60 + a * 5 + m * 2
+                70 + a * 5 + m * 2
+            )
+        )
+
+    if a >= 1 and m >= 1:
+
+        return (
+            "Acompanhamento arqueológico",
+            min(
+                100,
+                65 + a * 5 + m * 3
             )
         )
 
@@ -380,7 +393,7 @@ def classify(text):
             "Património cultural",
             min(
                 100,
-                45 + a * 5 + m * 2
+                50 + a * 5 + m * 2
             )
         )
 
@@ -408,7 +421,7 @@ def ted(q):
     body = {
         "query": expert_query,
         "fields": TED_FIELDS,
-        "limit": 100,
+        "limit": 250,
         "scope": "ACTIVE",
         "paginationMode": "PAGE_NUMBER",
         "page": 1,
@@ -422,6 +435,7 @@ def ted(q):
     }
 
     last_error = None
+    data = None
 
     for attempt in range(3):
 
@@ -431,7 +445,7 @@ def ted(q):
                 TED_URL,
                 json=body,
                 headers=headers,
-                timeout=35,
+                timeout=45,
             )
 
             if response.status_code in (
@@ -574,31 +588,32 @@ def ted(q):
             )
         )
 
-        # ====================================================
-        # FILTRO TEMPORAL
-        # ====================================================
+        # ----------------------------------------------------
+        # DATA
+        # ----------------------------------------------------
 
         pub_date = parse_publication_date(
             publication_date
         )
 
         if pub_date is not None:
-
             if pub_date < minimum_date:
-
                 skipped_old += 1
 
-                continue
+                # IMPORTANTE:
+                # O âmbito ACTIVE do TED inclui concursos
+                # cuja publicação original pode ser antiga,
+                # mas que continuam ativos.
+                #
+                # Por isso NÃO eliminamos aqui.
+                pass
 
         else:
-
-            # Se o TED não fornecer uma data reconhecível,
-            # mantemos o resultado para não perder concursos.
             skipped_no_date += 1
 
-        # ====================================================
+        # ----------------------------------------------------
         # CLASSIFICAÇÃO
-        # ====================================================
+        # ----------------------------------------------------
 
         full_text = " ".join([
             title,
@@ -610,12 +625,13 @@ def ted(q):
         ])
 
         category, score = classify(
-            full_text
+            full_text,
+            cpv,
         )
 
-        # ====================================================
+        # ----------------------------------------------------
         # URL
-        # ====================================================
+        # ----------------------------------------------------
 
         if publication_number:
 
@@ -646,8 +662,41 @@ def ted(q):
 
         })
 
-    total = data.get(
-        "totalNoticeCount"
+    # ========================================================
+    # REMOVER DUPLICADOS
+    # ========================================================
+
+    unique = {}
+
+    for result in results:
+
+        key = (
+            re.sub(
+                r"\s+",
+                " ",
+                result["title"].lower()
+            ).strip()
+            + "|"
+            + re.sub(
+                r"\s+",
+                " ",
+                result["buyer"].lower()
+            ).strip()
+        )
+
+        if key not in unique:
+
+            unique[key] = result
+
+        else:
+
+            old = unique[key]
+
+            if result["date"] > old["date"]:
+                unique[key] = result
+
+    results = list(
+        unique.values()
     )
 
     return results, {
@@ -655,7 +704,9 @@ def ted(q):
         "source": "TED",
         "ok": True,
         "count": len(results),
-        "total": total,
+        "total": data.get(
+            "totalNoticeCount"
+        ),
         "query": expert_query,
         "period_days": RESULTS_DAYS,
         "from_date": minimum_date.isoformat(),
@@ -733,8 +784,39 @@ def search(
 
     if region:
 
-        if region != "Europa":
+        region_map = {
 
+            "Europa": [
+                "Europa",
+                "Global",
+            ],
+
+            "África": [
+                "África",
+                "Global",
+            ],
+
+            "Médio Oriente": [
+                "Médio Oriente",
+                "Global",
+            ],
+
+            "Américas": [
+                "Américas",
+                "Global",
+            ],
+
+            "Ásia-Pacífico": [
+                "Ásia-Pacífico",
+                "Global",
+            ],
+
+        }
+
+        # O TED é europeu.
+        # Para já, só classificamos por país,
+        # sem eliminar resultados automaticamente.
+        if region != "Europa":
             results = []
 
     # ========================================================
