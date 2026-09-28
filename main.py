@@ -75,7 +75,7 @@ SOURCES = [
      "https://www.gets.govt.nz/", "portal"),
 ]
 # ============================================================
-# TERMOS DE PESQUISA
+# TERMOS DE ARQUEOLOGIA
 # ============================================================
 ARCH = [
     "archaeology",
@@ -96,6 +96,9 @@ ARCH = [
     "archaeological works",
     "archaeological services",
 ]
+# ============================================================
+# GRANDES PROJETOS
+# ============================================================
 MAJOR = [
     "railway",
     "rail",
@@ -124,7 +127,7 @@ MAJOR = [
     "power line",
 ]
 # ============================================================
-# TED
+# TED API
 # ============================================================
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 TED_FIELDS = [
@@ -136,8 +139,10 @@ TED_FIELDS = [
     "classification-cpv",
     "notice-type",
 ]
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
 def flatten(value):
-    """Transforma listas e dicionários TED em texto simples."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -178,12 +183,20 @@ def clean_query(text):
     text = str(text or "").strip()
     text = re.sub(r'["\\]', " ", text)
     return text
+# ============================================================
+# CONSTRUÇÃO DA PESQUISA TED
+# ============================================================
 def build_ted_query(q):
     q = clean_query(q)
     if not q:
         q = "archaeology"
-    # Pesquisa simples de texto completo no TED
-    return f'FT~"{q}"'
+    # Pesquisa de texto completo no TED.
+    # Exemplo:
+    # FT~archaeology
+    return f"FT~{q}"
+# ============================================================
+# CLASSIFICAÇÃO
+# ============================================================
 def classify(text):
     t = text.lower()
     archaeology_matches = [
@@ -212,6 +225,9 @@ def classify(text):
             min(100, 25 + m * 4)
         )
     return "Outro", 0
+# ============================================================
+# PESQUISA TED
+# ============================================================
 def ted(q):
     expert_query = build_ted_query(q)
     body = {
@@ -258,12 +274,13 @@ def ted(q):
             if attempt < 2:
                 time.sleep(2 ** attempt)
             else:
-                raise RuntimeError(str(last_error))
+                raise RuntimeError(
+                    str(last_error)
+                )
     if not isinstance(data, dict):
         raise RuntimeError(
             "O TED devolveu uma resposta inesperada."
         )
-    # TED pode devolver os resultados em diferentes campos
     notices = data.get("notices")
     if notices is None:
         notices = data.get("results")
@@ -375,18 +392,24 @@ def search(
             "count": 0,
             "error": str(exc),
         })
-    # Filtro de região
+    # ========================================================
+    # FILTRO DE REGIÃO
+    # ========================================================
     if region:
         if region != "Europa":
             results = []
-    # Filtro de categoria
+    # ========================================================
+    # FILTRO DE CATEGORIA
+    # ========================================================
     if category:
         results = [
             result
             for result in results
             if result.get("category") == category
         ]
-    # Ordenação
+    # ========================================================
+    # ORDENAÇÃO
+    # ========================================================
     results.sort(
         key=lambda x: (
             x.get("score", 0),
