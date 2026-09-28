@@ -6,17 +6,22 @@ from pathlib import Path
 import requests
 import re
 import time
+
 ROOT = Path(__file__).resolve().parent
+
 app = FastAPI(title="Arqueologia Radar")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # ============================================================
 # FONTES
 # ============================================================
+
 SOURCES = [
     ("TED", "Europa", "https://ted.europa.eu/en/search", "api"),
     ("World Bank Procurement", "Global",
@@ -74,9 +79,12 @@ SOURCES = [
     ("New Zealand GETS", "Ásia-Pacífico",
      "https://www.gets.govt.nz/", "portal"),
 ]
+
+
 # ============================================================
-# TERMOS DE ARQUEOLOGIA
+# TERMOS
 # ============================================================
+
 ARCH = [
     "archaeology",
     "archaeological",
@@ -96,9 +104,7 @@ ARCH = [
     "archaeological works",
     "archaeological services",
 ]
-# ============================================================
-# GRANDES PROJETOS
-# ============================================================
+
 MAJOR = [
     "railway",
     "rail",
@@ -126,10 +132,14 @@ MAJOR = [
     "transmission line",
     "power line",
 ]
+
+
 # ============================================================
-# TED API
+# TED
 # ============================================================
+
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
+
 TED_FIELDS = [
     "publication-number",
     "publication-date",
@@ -139,24 +149,34 @@ TED_FIELDS = [
     "classification-cpv",
     "notice-type",
 ]
-# ============================================================
-# FUNÇÕES AUXILIARES
-# ============================================================
+
+
 def flatten(value):
+
     if value is None:
         return ""
+
     if isinstance(value, str):
         return value
+
     if isinstance(value, (int, float)):
         return str(value)
+
     if isinstance(value, list):
+
         values = []
+
         for item in value:
+
             text = flatten(item)
+
             if text:
                 values.append(text)
+
         return " | ".join(values)
+
     if isinstance(value, dict):
+
         preferred = [
             "eng",
             "en",
@@ -167,69 +187,106 @@ def flatten(value):
             "fra",
             "fr",
         ]
+
         for key in preferred:
+
             if key in value:
+
                 text = flatten(value[key])
+
                 if text:
                     return text
+
         values = []
+
         for item in value.values():
+
             text = flatten(item)
+
             if text:
                 values.append(text)
+
         return " | ".join(values)
+
     return str(value)
+
+
 def clean_query(text):
+
     text = str(text or "").strip()
+
     text = re.sub(r'["\\]', " ", text)
+
     return text
+
+
 # ============================================================
-# CONSTRUÇÃO DA PESQUISA TED
+# CONSTRUIR CONSULTA TED
 # ============================================================
+
 def build_ted_query(q):
+
     q = clean_query(q)
+
     if not q:
         q = "archaeology"
-    # Pesquisa de texto completo no TED.
-    # Exemplo:
-    # FT~archaeology
-    return f"FT~{q}"
+
+    return f'FT~("{q}")'
+
+
 # ============================================================
 # CLASSIFICAÇÃO
 # ============================================================
+
 def classify(text):
+
     t = text.lower()
+
     archaeology_matches = [
         word for word in ARCH
         if word in t
     ]
+
     major_matches = [
         word for word in MAJOR
         if word in t
     ]
+
     a = len(archaeology_matches)
     m = len(major_matches)
+
     if a >= 2:
+
         return (
             "Arqueologia direta",
             min(100, 60 + a * 5 + m * 2)
         )
+
     if a >= 1:
+
         return (
             "Património cultural",
             min(100, 45 + a * 5 + m * 2)
         )
+
     if m:
+
         return (
             "Grande projeto / potencial subcontratação",
             min(100, 25 + m * 4)
         )
+
     return "Outro", 0
+
+
 # ============================================================
 # PESQUISA TED
 # ============================================================
+
 def ted(q):
+
     expert_query = build_ted_query(q)
+
     body = {
         "query": expert_query,
         "fields": TED_FIELDS,
@@ -237,22 +294,32 @@ def ted(q):
         "scope": "ACTIVE",
         "paginationMode": "PAGE_NUMBER",
         "page": 1,
-        "checkQuerySyntax": True,
+
+        # MUITO IMPORTANTE:
+        # False = executar a pesquisa
+        # True = apenas validar a sintaxe
+        "checkQuerySyntax": False,
     }
+
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
         "User-Agent": "Arqueologia-Radar/1.0",
     }
+
     last_error = None
+
     for attempt in range(3):
+
         try:
+
             response = requests.post(
                 TED_URL,
                 json=body,
                 headers=headers,
                 timeout=35,
             )
+
             if response.status_code in (
                 429,
                 500,
@@ -260,60 +327,83 @@ def ted(q):
                 503,
                 504,
             ) and attempt < 2:
+
                 time.sleep(2 ** attempt)
                 continue
+
             if not response.ok:
+
                 detail = response.text[:2000]
+
                 raise RuntimeError(
                     f"TED HTTP {response.status_code}: {detail}"
                 )
+
             data = response.json()
+
             break
+
         except Exception as exc:
+
             last_error = exc
+
             if attempt < 2:
+
                 time.sleep(2 ** attempt)
+
             else:
+
                 raise RuntimeError(
                     str(last_error)
                 )
+
     if not isinstance(data, dict):
+
         raise RuntimeError(
             "O TED devolveu uma resposta inesperada."
         )
+
     notices = data.get("notices")
-    if notices is None:
-        notices = data.get("results")
-    if notices is None:
-        notices = data.get("content")
+
     if notices is None:
         notices = []
+
     results = []
+
     for notice in notices:
+
         if not isinstance(notice, dict):
             continue
+
         publication_number = flatten(
             notice.get("publication-number")
         )
+
         title = (
             flatten(notice.get("notice-title"))
             or "Concurso TED"
         )
+
         buyer = flatten(
             notice.get("buyer-name")
         )
+
         country = flatten(
             notice.get("buyer-country")
         )
+
         cpv = flatten(
             notice.get("classification-cpv")
         )
+
         notice_type = flatten(
             notice.get("notice-type")
         )
+
         publication_date = flatten(
             notice.get("publication-date")
         )
+
         full_text = " ".join([
             title,
             buyer,
@@ -322,15 +412,22 @@ def ted(q):
             notice_type,
             flatten(notice),
         ])
+
         category, score = classify(full_text)
+
         if publication_number:
+
             url = (
                 "https://ted.europa.eu/en/notice/"
                 f"-/detail/{publication_number}"
             )
+
         else:
+
             url = "https://ted.europa.eu/en/search"
+
         results.append({
+
             "title": title,
             "source": "TED",
             "date": publication_date,
@@ -342,25 +439,29 @@ def ted(q):
             "url": url,
             "category": category,
             "score": score,
+
         })
-    total = (
-        data.get("totalNoticeCount")
-        or data.get("total-matching-notices")
-        or data.get("totalSize")
-        or data.get("total")
-    )
+
+    total = data.get("totalNoticeCount")
+
     return results, {
+
         "source": "TED",
         "ok": True,
         "count": len(results),
         "total": total,
         "query": expert_query,
+
     }
+
+
 # ============================================================
-# API - FONTES
+# FONTES
 # ============================================================
+
 @app.get("/api/sources")
 def sources():
+
     return [
         {
             "name": name,
@@ -368,48 +469,68 @@ def sources():
             "url": url,
             "mode": mode,
         }
+
         for name, region, url, mode in SOURCES
     ]
+
+
 # ============================================================
-# API - PESQUISA
+# PESQUISA
 # ============================================================
+
 @app.get("/api/search")
 def search(
     q: str = Query("archaeology"),
     region: str = "",
     category: str = "",
 ):
+
     results = []
+
     diagnostics = []
+
     try:
+
         ted_results, status = ted(q)
+
         results.extend(ted_results)
+
         diagnostics.append(status)
+
     except Exception as exc:
+
         diagnostics.append({
+
             "source": "TED",
             "ok": False,
             "count": 0,
             "error": str(exc),
+
         })
-    # ========================================================
-    # FILTRO DE REGIÃO
-    # ========================================================
+
+
+    # Filtro de região
+
     if region:
+
         if region != "Europa":
+
             results = []
-    # ========================================================
-    # FILTRO DE CATEGORIA
-    # ========================================================
+
+
+    # Filtro de categoria
+
     if category:
+
         results = [
             result
             for result in results
             if result.get("category") == category
         ]
-    # ========================================================
-    # ORDENAÇÃO
-    # ========================================================
+
+
+    # Ordenação
+
     results.sort(
         key=lambda x: (
             x.get("score", 0),
@@ -417,9 +538,14 @@ def search(
         ),
         reverse=True,
     )
+
+
     return {
+
         "results": results,
+
         "diagnostics": diagnostics,
+
         "portal_count": sum(
             1
             for source in SOURCES
@@ -432,19 +558,27 @@ def search(
                 )
             )
         ),
+
         "api_count": sum(
             1
             for source in SOURCES
             if source[3] == "api"
         ),
+
         "searched_at": date.today().isoformat(),
+
     }
+
+
 # ============================================================
 # HEALTH CHECK
 # ============================================================
+
 @app.get("/api/health")
 def health():
+
     return {
+
         "ok": True,
         "sources": len(SOURCES),
         "api_sources": sum(
@@ -452,29 +586,42 @@ def health():
             for source in SOURCES
             if source[3] == "api"
         ),
+
     }
+
+
 # ============================================================
 # PÁGINA PRINCIPAL
 # ============================================================
+
 @app.get("/")
 def home():
+
     return FileResponse(
         ROOT / "index.html"
     )
+
+
 # ============================================================
 # JAVASCRIPT
 # ============================================================
+
 @app.get("/app.js")
 def js():
+
     return FileResponse(
         ROOT / "app.js",
         media_type="application/javascript",
     )
+
+
 # ============================================================
 # MANIFEST
 # ============================================================
+
 @app.get("/manifest.json")
 def manifest():
+
     return FileResponse(
         ROOT / "manifest.json",
         media_type="application/manifest+json",
