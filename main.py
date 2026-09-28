@@ -81,7 +81,6 @@ SOURCES = [
      "https://www.gets.govt.nz/", "portal"),
 ]
 
-
 # ============================================================
 # TERMOS
 # ============================================================
@@ -134,30 +133,24 @@ MAJOR = [
     "power line",
 ]
 
-
 # ============================================================
-# CONFIGURAÇÃO TEMPORAL
+# PERÍODO
 # ============================================================
 
-# Número de dias considerados pelo Radar.
-# 365 dias = aproximadamente os últimos 12 meses.
 RESULTS_DAYS = 365
 
 
 def cutoff_date():
-
     return date.today() - timedelta(days=RESULTS_DAYS)
 
 
 def parse_publication_date(value):
-
     """
-    Converte diferentes formatos possíveis de data
-    do TED para um objeto date.
-
-    Exemplos aceites:
+    Extrai apenas a parte YYYY-MM-DD.
+    Funciona com:
     2026-09-28
     2026-09-28T10:30:00
+    2026-09-28+01:00
     2026-09-28T10:30:00Z
     """
 
@@ -166,37 +159,21 @@ def parse_publication_date(value):
 
     value = str(value).strip()
 
-    # Caso normal: YYYY-MM-DD
-    match = re.match(
-        r"^(\d{4})-(\d{2})-(\d{2})",
+    match = re.search(
+        r"(\d{4})-(\d{2})-(\d{2})",
         value
     )
 
-    if match:
+    if not match:
+        return None
 
-        try:
-
-            return date(
-                int(match.group(1)),
-                int(match.group(2)),
-                int(match.group(3)),
-            )
-
-        except ValueError:
-
-            return None
-
-    # Outros formatos ISO
     try:
-
-        cleaned = value.replace("Z", "+00:00")
-
-        return datetime.fromisoformat(
-            cleaned
-        ).date()
-
-    except (ValueError, TypeError):
-
+        return date(
+            int(match.group(1)),
+            int(match.group(2)),
+            int(match.group(3)),
+        )
+    except ValueError:
         return None
 
 
@@ -223,14 +200,6 @@ TED_FIELDS = [
 
 def repair_text(value):
 
-    """
-    Corrige casos de texto interpretado com a
-    codificação errada.
-
-    Exemplo:
-    archÃ©ologiques -> archéologiques
-    """
-
     if not isinstance(value, str):
         return value
 
@@ -240,16 +209,18 @@ def repair_text(value):
         "Ï", "Š", "™"
     )
 
-    if not any(char in value for char in suspicious):
-
+    if not any(
+        char in value
+        for char in suspicious
+    ):
         return value
 
     try:
 
-        repaired = value.encode(
-            "latin1"
-        ).decode(
-            "utf-8"
+        repaired = (
+            value
+            .encode("latin1")
+            .decode("utf-8")
         )
 
         old_count = sum(
@@ -263,14 +234,12 @@ def repair_text(value):
         )
 
         if new_count < old_count:
-
             return repaired
 
     except (
         UnicodeEncodeError,
         UnicodeDecodeError
     ):
-
         pass
 
     return value
@@ -282,11 +251,9 @@ def flatten(value):
         return ""
 
     if isinstance(value, str):
-
         return repair_text(value)
 
     if isinstance(value, (int, float)):
-
         return str(value)
 
     if isinstance(value, list):
@@ -298,7 +265,6 @@ def flatten(value):
             text = flatten(item)
 
             if text:
-
                 values.append(text)
 
         return " | ".join(values)
@@ -325,7 +291,6 @@ def flatten(value):
                 )
 
                 if text:
-
                     return text
 
         values = []
@@ -335,7 +300,6 @@ def flatten(value):
             text = flatten(item)
 
             if text:
-
                 values.append(text)
 
         return " | ".join(values)
@@ -359,7 +323,7 @@ def clean_query(text):
 
 
 # ============================================================
-# CONSTRUIR CONSULTA TED
+# CONSULTA TED
 # ============================================================
 
 def build_ted_query(q):
@@ -367,7 +331,6 @@ def build_ted_query(q):
     q = clean_query(q)
 
     if not q:
-
         q = "archaeology"
 
     return f'FT~("{q}")'
@@ -493,10 +456,6 @@ def ted(q):
                     f"TED HTTP {response.status_code}: {detail}"
                 )
 
-            # ==================================================
-            # LEITURA UTF-8
-            # ==================================================
-
             try:
 
                 data_text = (
@@ -534,24 +493,33 @@ def ted(q):
                     str(last_error)
                 )
 
-    if not isinstance(data, dict):
+    if not isinstance(
+        data,
+        dict
+    ):
 
         raise RuntimeError(
             "O TED devolveu uma resposta inesperada."
         )
 
     notices = data.get(
-        "notices"
+        "notices",
+        []
     )
 
-    if notices is None:
+    if not isinstance(
+        notices,
+        list
+    ):
 
         notices = []
 
     results = []
 
-    # Data mínima permitida
     minimum_date = cutoff_date()
+
+    skipped_old = 0
+    skipped_no_date = 0
 
     for notice in notices:
 
@@ -559,7 +527,6 @@ def ted(q):
             notice,
             dict
         ):
-
             continue
 
         publication_number = flatten(
@@ -607,25 +574,31 @@ def ted(q):
             )
         )
 
-        # ======================================================
+        # ====================================================
         # FILTRO TEMPORAL
-        # ======================================================
+        # ====================================================
 
         pub_date = parse_publication_date(
             publication_date
         )
 
-        # Se existir uma data válida e for anterior
-        # aos últimos 365 dias, o concurso é ignorado.
         if pub_date is not None:
 
             if pub_date < minimum_date:
 
+                skipped_old += 1
+
                 continue
 
-        # ======================================================
+        else:
+
+            # Se o TED não fornecer uma data reconhecível,
+            # mantemos o resultado para não perder concursos.
+            skipped_no_date += 1
+
+        # ====================================================
         # CLASSIFICAÇÃO
-        # ======================================================
+        # ====================================================
 
         full_text = " ".join([
             title,
@@ -640,9 +613,9 @@ def ted(q):
             full_text
         )
 
-        # ======================================================
-        # LINK
-        # ======================================================
+        # ====================================================
+        # URL
+        # ====================================================
 
         if publication_number:
 
@@ -660,25 +633,15 @@ def ted(q):
         results.append({
 
             "title": title,
-
             "source": "TED",
-
             "date": publication_date,
-
             "deadline": "",
-
             "country": country,
-
             "buyer": buyer,
-
             "cpv": cpv,
-
             "notice_type": notice_type,
-
             "url": url,
-
             "category": category,
-
             "score": score,
 
         })
@@ -690,18 +653,14 @@ def ted(q):
     return results, {
 
         "source": "TED",
-
         "ok": True,
-
         "count": len(results),
-
         "total": total,
-
         "query": expert_query,
-
         "period_days": RESULTS_DAYS,
-
         "from_date": minimum_date.isoformat(),
+        "skipped_old": skipped_old,
+        "without_recognized_date": skipped_no_date,
 
     }
 
@@ -762,11 +721,8 @@ def search(
         diagnostics.append({
 
             "source": "TED",
-
             "ok": False,
-
             "count": 0,
-
             "error": str(exc),
 
         })
