@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import requests
 import re
 import time
+import json
 
 ROOT = Path(__file__).resolve().parent
 
@@ -135,6 +136,71 @@ MAJOR = [
 
 
 # ============================================================
+# CONFIGURAÇÃO TEMPORAL
+# ============================================================
+
+# Número de dias considerados pelo Radar.
+# 365 dias = aproximadamente os últimos 12 meses.
+RESULTS_DAYS = 365
+
+
+def cutoff_date():
+
+    return date.today() - timedelta(days=RESULTS_DAYS)
+
+
+def parse_publication_date(value):
+
+    """
+    Converte diferentes formatos possíveis de data
+    do TED para um objeto date.
+
+    Exemplos aceites:
+    2026-09-28
+    2026-09-28T10:30:00
+    2026-09-28T10:30:00Z
+    """
+
+    if not value:
+        return None
+
+    value = str(value).strip()
+
+    # Caso normal: YYYY-MM-DD
+    match = re.match(
+        r"^(\d{4})-(\d{2})-(\d{2})",
+        value
+    )
+
+    if match:
+
+        try:
+
+            return date(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+            )
+
+        except ValueError:
+
+            return None
+
+    # Outros formatos ISO
+    try:
+
+        cleaned = value.replace("Z", "+00:00")
+
+        return datetime.fromisoformat(
+            cleaned
+        ).date()
+
+    except (ValueError, TypeError):
+
+        return None
+
+
+# ============================================================
 # TED
 # ============================================================
 
@@ -156,38 +222,55 @@ TED_FIELDS = [
 # ============================================================
 
 def repair_text(value):
+
     """
-    Corrige casos de texto que tenham sido interpretados
-    com a codificação errada, por exemplo:
-    'archÃ©ologiques' -> 'archéologiques'
-    'Malta â€“' -> 'Malta –'
+    Corrige casos de texto interpretado com a
+    codificação errada.
+
+    Exemplo:
+    archÃ©ologiques -> archéologiques
     """
 
     if not isinstance(value, str):
         return value
 
-    # Só tentamos reparar quando aparecem padrões típicos
-    # de UTF-8 interpretado como Latin-1/Windows-1252.
     suspicious = (
-        "Ã", "Â", "â", "ð", "Ð", "Ñ", "Ä", "Å",
-        "Æ", "Ç", "Ë", "Î", "Ï", "Š", "™"
+        "Ã", "Â", "â", "ð", "Ð", "Ñ",
+        "Ä", "Å", "Æ", "Ç", "Ë", "Î",
+        "Ï", "Š", "™"
     )
 
     if not any(char in value for char in suspicious):
+
         return value
 
     try:
-        repaired = value.encode("latin1").decode("utf-8")
 
-        # Só aceitamos a reparação se realmente melhorar
-        # os padrões suspeitos.
-        old_count = sum(value.count(x) for x in suspicious)
-        new_count = sum(repaired.count(x) for x in suspicious)
+        repaired = value.encode(
+            "latin1"
+        ).decode(
+            "utf-8"
+        )
+
+        old_count = sum(
+            value.count(x)
+            for x in suspicious
+        )
+
+        new_count = sum(
+            repaired.count(x)
+            for x in suspicious
+        )
 
         if new_count < old_count:
+
             return repaired
 
-    except (UnicodeEncodeError, UnicodeDecodeError):
+    except (
+        UnicodeEncodeError,
+        UnicodeDecodeError
+    ):
+
         pass
 
     return value
@@ -199,9 +282,11 @@ def flatten(value):
         return ""
 
     if isinstance(value, str):
+
         return repair_text(value)
 
     if isinstance(value, (int, float)):
+
         return str(value)
 
     if isinstance(value, list):
@@ -213,6 +298,7 @@ def flatten(value):
             text = flatten(item)
 
             if text:
+
                 values.append(text)
 
         return " | ".join(values)
@@ -234,9 +320,12 @@ def flatten(value):
 
             if key in value:
 
-                text = flatten(value[key])
+                text = flatten(
+                    value[key]
+                )
 
                 if text:
+
                     return text
 
         values = []
@@ -246,6 +335,7 @@ def flatten(value):
             text = flatten(item)
 
             if text:
+
                 values.append(text)
 
         return " | ".join(values)
@@ -255,9 +345,15 @@ def flatten(value):
 
 def clean_query(text):
 
-    text = str(text or "").strip()
+    text = str(
+        text or ""
+    ).strip()
 
-    text = re.sub(r'["\\]', " ", text)
+    text = re.sub(
+        r'["\\]',
+        " ",
+        text
+    )
 
     return text
 
@@ -271,6 +367,7 @@ def build_ted_query(q):
     q = clean_query(q)
 
     if not q:
+
         q = "archaeology"
 
     return f'FT~("{q}")'
@@ -285,37 +382,53 @@ def classify(text):
     t = text.lower()
 
     archaeology_matches = [
-        word for word in ARCH
+        word
+        for word in ARCH
         if word in t
     ]
 
     major_matches = [
-        word for word in MAJOR
+        word
+        for word in MAJOR
         if word in t
     ]
 
-    a = len(archaeology_matches)
-    m = len(major_matches)
+    a = len(
+        archaeology_matches
+    )
+
+    m = len(
+        major_matches
+    )
 
     if a >= 2:
 
         return (
             "Arqueologia direta",
-            min(100, 60 + a * 5 + m * 2)
+            min(
+                100,
+                60 + a * 5 + m * 2
+            )
         )
 
     if a >= 1:
 
         return (
             "Património cultural",
-            min(100, 45 + a * 5 + m * 2)
+            min(
+                100,
+                45 + a * 5 + m * 2
+            )
         )
 
     if m:
 
         return (
             "Grande projeto / potencial subcontratação",
-            min(100, 25 + m * 4)
+            min(
+                100,
+                25 + m * 4
+            )
         )
 
     return "Outro", 0
@@ -336,9 +449,6 @@ def ted(q):
         "scope": "ACTIVE",
         "paginationMode": "PAGE_NUMBER",
         "page": 1,
-
-        # False = executar a pesquisa
-        # True = apenas validar a sintaxe
         "checkQuerySyntax": False,
     }
 
@@ -369,7 +479,10 @@ def ted(q):
                 504,
             ) and attempt < 2:
 
-                time.sleep(2 ** attempt)
+                time.sleep(
+                    2 ** attempt
+                )
+
                 continue
 
             if not response.ok:
@@ -381,25 +494,26 @@ def ted(q):
                 )
 
             # ==================================================
-            # CORREÇÃO DE CODIFICAÇÃO
+            # LEITURA UTF-8
             # ==================================================
-            #
-            # Forçamos UTF-8 na resposta do TED.
-            # Depois usamos response.content para fazer
-            # a descodificação diretamente.
-            #
 
             try:
 
-                data_text = response.content.decode("utf-8")
+                data_text = (
+                    response
+                    .content
+                    .decode("utf-8")
+                )
 
-                import json
+                data = json.loads(
+                    data_text
+                )
 
-                data = json.loads(data_text)
+            except (
+                UnicodeDecodeError,
+                ValueError
+            ):
 
-            except (UnicodeDecodeError, ValueError):
-
-                # Fallback para o mecanismo habitual do requests
                 data = response.json()
 
             break
@@ -410,7 +524,9 @@ def ted(q):
 
             if attempt < 2:
 
-                time.sleep(2 ** attempt)
+                time.sleep(
+                    2 ** attempt
+                )
 
             else:
 
@@ -424,46 +540,92 @@ def ted(q):
             "O TED devolveu uma resposta inesperada."
         )
 
-    notices = data.get("notices")
+    notices = data.get(
+        "notices"
+    )
 
     if notices is None:
+
         notices = []
 
     results = []
 
+    # Data mínima permitida
+    minimum_date = cutoff_date()
+
     for notice in notices:
 
-        if not isinstance(notice, dict):
+        if not isinstance(
+            notice,
+            dict
+        ):
+
             continue
 
         publication_number = flatten(
-            notice.get("publication-number")
+            notice.get(
+                "publication-number"
+            )
         )
 
         title = (
-            flatten(notice.get("notice-title"))
+            flatten(
+                notice.get(
+                    "notice-title"
+                )
+            )
             or "Concurso TED"
         )
 
         buyer = flatten(
-            notice.get("buyer-name")
+            notice.get(
+                "buyer-name"
+            )
         )
 
         country = flatten(
-            notice.get("buyer-country")
+            notice.get(
+                "buyer-country"
+            )
         )
 
         cpv = flatten(
-            notice.get("classification-cpv")
+            notice.get(
+                "classification-cpv"
+            )
         )
 
         notice_type = flatten(
-            notice.get("notice-type")
+            notice.get(
+                "notice-type"
+            )
         )
 
         publication_date = flatten(
-            notice.get("publication-date")
+            notice.get(
+                "publication-date"
+            )
         )
+
+        # ======================================================
+        # FILTRO TEMPORAL
+        # ======================================================
+
+        pub_date = parse_publication_date(
+            publication_date
+        )
+
+        # Se existir uma data válida e for anterior
+        # aos últimos 365 dias, o concurso é ignorado.
+        if pub_date is not None:
+
+            if pub_date < minimum_date:
+
+                continue
+
+        # ======================================================
+        # CLASSIFICAÇÃO
+        # ======================================================
 
         full_text = " ".join([
             title,
@@ -474,7 +636,13 @@ def ted(q):
             flatten(notice),
         ])
 
-        category, score = classify(full_text)
+        category, score = classify(
+            full_text
+        )
+
+        # ======================================================
+        # LINK
+        # ======================================================
 
         if publication_number:
 
@@ -485,33 +653,55 @@ def ted(q):
 
         else:
 
-            url = "https://ted.europa.eu/en/search"
+            url = (
+                "https://ted.europa.eu/en/search"
+            )
 
         results.append({
 
             "title": title,
+
             "source": "TED",
+
             "date": publication_date,
+
             "deadline": "",
+
             "country": country,
+
             "buyer": buyer,
+
             "cpv": cpv,
+
             "notice_type": notice_type,
+
             "url": url,
+
             "category": category,
+
             "score": score,
 
         })
 
-    total = data.get("totalNoticeCount")
+    total = data.get(
+        "totalNoticeCount"
+    )
 
     return results, {
 
         "source": "TED",
+
         "ok": True,
+
         "count": len(results),
+
         "total": total,
+
         "query": expert_query,
+
+        "period_days": RESULTS_DAYS,
+
+        "from_date": minimum_date.isoformat(),
 
     }
 
@@ -524,6 +714,7 @@ def ted(q):
 def sources():
 
     return [
+
         {
             "name": name,
             "region": region,
@@ -531,7 +722,9 @@ def sources():
             "mode": mode,
         }
 
-        for name, region, url, mode in SOURCES
+        for name, region, url, mode
+        in SOURCES
+
     ]
 
 
@@ -541,7 +734,9 @@ def sources():
 
 @app.get("/api/search")
 def search(
-    q: str = Query("archaeology"),
+    q: str = Query(
+        "archaeology"
+    ),
     region: str = "",
     category: str = "",
 ):
@@ -554,17 +749,24 @@ def search(
 
         ted_results, status = ted(q)
 
-        results.extend(ted_results)
+        results.extend(
+            ted_results
+        )
 
-        diagnostics.append(status)
+        diagnostics.append(
+            status
+        )
 
     except Exception as exc:
 
         diagnostics.append({
 
             "source": "TED",
+
             "ok": False,
+
             "count": 0,
+
             "error": str(exc),
 
         })
@@ -586,9 +788,15 @@ def search(
     if category:
 
         results = [
+
             result
+
             for result in results
-            if result.get("category") == category
+
+            if result.get(
+                "category"
+            ) == category
+
         ]
 
     # ========================================================
@@ -596,12 +804,28 @@ def search(
     # ========================================================
 
     results.sort(
+
         key=lambda x: (
-            x.get("score", 0),
-            x.get("date", ""),
+
+            x.get(
+                "score",
+                0
+            ),
+
+            x.get(
+                "date",
+                ""
+            ),
+
         ),
+
         reverse=True,
+
     )
+
+    # ========================================================
+    # RESPOSTA
+    # ========================================================
 
     return {
 
@@ -610,25 +834,39 @@ def search(
         "diagnostics": diagnostics,
 
         "portal_count": sum(
+
             1
+
             for source in SOURCES
+
             if source[3] == "portal"
+
             and (
+
                 not region
+
                 or source[1] in (
                     region,
                     "Global",
                 )
+
             )
+
         ),
 
         "api_count": sum(
+
             1
+
             for source in SOURCES
+
             if source[3] == "api"
+
         ),
 
-        "searched_at": date.today().isoformat(),
+        "searched_at": (
+            date.today().isoformat()
+        ),
 
     }
 
@@ -643,11 +881,19 @@ def health():
     return {
 
         "ok": True,
-        "sources": len(SOURCES),
+
+        "sources": len(
+            SOURCES
+        ),
+
         "api_sources": sum(
+
             1
+
             for source in SOURCES
+
             if source[3] == "api"
+
         ),
 
     }
