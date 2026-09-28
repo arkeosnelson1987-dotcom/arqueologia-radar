@@ -151,13 +151,55 @@ TED_FIELDS = [
 ]
 
 
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
+
+def repair_text(value):
+    """
+    Corrige casos de texto que tenham sido interpretados
+    com a codificação errada, por exemplo:
+    'archÃ©ologiques' -> 'archéologiques'
+    'Malta â€“' -> 'Malta –'
+    """
+
+    if not isinstance(value, str):
+        return value
+
+    # Só tentamos reparar quando aparecem padrões típicos
+    # de UTF-8 interpretado como Latin-1/Windows-1252.
+    suspicious = (
+        "Ã", "Â", "â", "ð", "Ð", "Ñ", "Ä", "Å",
+        "Æ", "Ç", "Ë", "Î", "Ï", "Š", "™"
+    )
+
+    if not any(char in value for char in suspicious):
+        return value
+
+    try:
+        repaired = value.encode("latin1").decode("utf-8")
+
+        # Só aceitamos a reparação se realmente melhorar
+        # os padrões suspeitos.
+        old_count = sum(value.count(x) for x in suspicious)
+        new_count = sum(repaired.count(x) for x in suspicious)
+
+        if new_count < old_count:
+            return repaired
+
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+
+    return value
+
+
 def flatten(value):
 
     if value is None:
         return ""
 
     if isinstance(value, str):
-        return value
+        return repair_text(value)
 
     if isinstance(value, (int, float)):
         return str(value)
@@ -295,7 +337,6 @@ def ted(q):
         "paginationMode": "PAGE_NUMBER",
         "page": 1,
 
-        # MUITO IMPORTANTE:
         # False = executar a pesquisa
         # True = apenas validar a sintaxe
         "checkQuerySyntax": False,
@@ -339,7 +380,27 @@ def ted(q):
                     f"TED HTTP {response.status_code}: {detail}"
                 )
 
-            data = response.json()
+            # ==================================================
+            # CORREÇÃO DE CODIFICAÇÃO
+            # ==================================================
+            #
+            # Forçamos UTF-8 na resposta do TED.
+            # Depois usamos response.content para fazer
+            # a descodificação diretamente.
+            #
+
+            try:
+
+                data_text = response.content.decode("utf-8")
+
+                import json
+
+                data = json.loads(data_text)
+
+            except (UnicodeDecodeError, ValueError):
+
+                # Fallback para o mecanismo habitual do requests
+                data = response.json()
 
             break
 
@@ -508,8 +569,9 @@ def search(
 
         })
 
-
-    # Filtro de região
+    # ========================================================
+    # FILTRO DE REGIÃO
+    # ========================================================
 
     if region:
 
@@ -517,8 +579,9 @@ def search(
 
             results = []
 
-
-    # Filtro de categoria
+    # ========================================================
+    # FILTRO DE CATEGORIA
+    # ========================================================
 
     if category:
 
@@ -528,8 +591,9 @@ def search(
             if result.get("category") == category
         ]
 
-
-    # Ordenação
+    # ========================================================
+    # ORDENAÇÃO
+    # ========================================================
 
     results.sort(
         key=lambda x: (
@@ -538,7 +602,6 @@ def search(
         ),
         reverse=True,
     )
-
 
     return {
 
