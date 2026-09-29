@@ -27,12 +27,12 @@ TED_FIELDS = [
 def search():
 
     payload = {
-        "query": 'notice-title~"archaeology"',
+        "query": 'notice-title~("archaeology")',
         "fields": TED_FIELDS,
         "page": 1,
         "limit": 10,
         "scope": "ALL",
-        "checkQuerySyntax": True,
+        "checkQuerySyntax": False,
         "paginationMode": "PAGE_NUMBER",
     }
 
