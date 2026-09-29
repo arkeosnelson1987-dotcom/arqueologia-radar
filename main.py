@@ -1,8 +1,7 @@
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import html
 import re
-import unicodedata
 
 import requests
 
@@ -17,12 +16,6 @@ TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 app = FastAPI(title="Arqueologia Radar")
 
 
-# ============================================================
-# CONFIGURAÇÃO
-# ============================================================
-
-PERIOD_DAYS = 365
-
 TED_FIELDS = [
     "publication-number",
     "publication-date",
@@ -31,28 +24,10 @@ TED_FIELDS = [
     "buyer-country",
     "classification-cpv",
     "notice-type",
-    "deadline-date-lot",
 ]
 
-
-SEARCH_TERMS = [
-    "archaeology",
-    "archaeological",
-    "excavation",
-    "cultural heritage",
-    "archaeological monitoring",
-]
-
-
-# ============================================================
-# FUNÇÕES AUXILIARES
-# ============================================================
 
 def repair_text(value):
-    """
-    Corrige problemas de codificação do tipo:
-    ServiÃ§os arqueolÃ³gicos
-    """
 
     if value is None:
         return ""
@@ -62,75 +37,6 @@ def repair_text(value):
             repair_text(x)
             for x in value
         )
-
-    if isinstance(value, dict):
-        return " ".join(
-            repair_text(x)
-            for x in value.values()
-        )
-
-    text = str(value)
-
-    for _ in range(2):
-        try:
-            repaired = text.encode(
-                "latin1"
-            ).decode(
-                "utf-8"
-            )
-
-            if repaired == text:
-                break
-
-            text = repaired
-
-        except Exception:
-            break
-
-    return html.unescape(text)
-
-
-def normalize_text(value):
-    text = repair_text(value)
-
-    text = unicodedata.normalize(
-        "NFKD",
-        text
-    )
-
-    text = "".join(
-        c for c in text
-        if not unicodedata.combining(c)
-    )
-
-    return text.lower()
-
-
-def first_language_value(value):
-    """
-    TED devolve vários campos como:
-    {
-        "por": "...",
-        "eng": "..."
-    }
-
-    ou como listas.
-    """
-
-    if value is None:
-        return ""
-
-    if isinstance(value, str):
-        return repair_text(value)
-
-    if isinstance(value, list):
-        for item in value:
-            result = first_language_value(item)
-
-            if result:
-                return result
-
-        return ""
 
     if isinstance(value, dict):
 
@@ -146,39 +52,50 @@ def first_language_value(value):
 
         for lang in preferred:
             if lang in value:
-                result = first_language_value(
+                result = repair_text(
                     value[lang]
                 )
-
                 if result:
                     return result
 
         for item in value.values():
-
-            result = first_language_value(item)
-
+            result = repair_text(item)
             if result:
                 return result
 
-    return repair_text(value)
+        return ""
+
+    text = str(value)
+
+    for _ in range(2):
+
+        try:
+
+            fixed = text.encode(
+                "latin1"
+            ).decode(
+                "utf-8"
+            )
+
+            if fixed == text:
+                break
+
+            text = fixed
+
+        except Exception:
+            break
+
+    return html.unescape(text)
 
 
 def parse_date(value):
-    """
-    Aceita:
-    2026-09-29
-    2026-09-29+02:00
-    20260929
-    """
 
     if not value:
         return None
 
-    value = str(value).strip()
-
     match = re.search(
         r"(\d{4})[-]?(\d{2})[-]?(\d{2})",
-        value
+        str(value)
     )
 
     if not match:
@@ -193,77 +110,33 @@ def parse_date(value):
         )
 
     except Exception:
+
         return None
 
 
-def extract_deadline(notice):
-    """
-    Procura o prazo em vários formatos possíveis
-    devolvidos pelo TED.
-    """
-
-    candidates = []
-
-    for field in [
-        "deadline-date-lot",
-        "deadline",
-        "deadline-date-part",
-    ]:
-
-        value = notice.get(field)
-
-        if value:
-            candidates.append(value)
-
-    for value in candidates:
-
-        result = parse_date(value)
-
-        if result:
-            return result
-
-        if isinstance(value, list):
-
-            for item in value:
-
-                result = parse_date(item)
-
-                if result:
-                    return result
-
-        if isinstance(value, dict):
-
-            for item in value.values():
-
-                result = parse_date(item)
-
-                if result:
-                    return result
-
-    return None
-
-
-def get_country(notice):
-    value = notice.get(
-        "buyer-country"
-    )
-
-    return first_language_value(value)
-
-
-def get_buyer(notice):
-    return first_language_value(
-        notice.get("buyer-name")
-    )
-
-
 def get_title(notice):
-    return first_language_value(
+
+    return repair_text(
         notice.get("notice-title")
     )
 
 
+def get_buyer(notice):
+
+    return repair_text(
+        notice.get("buyer-name")
+    )
+
+
+def get_country(notice):
+
+    return repair_text(
+        notice.get("buyer-country")
+    )
+
+
 def get_cpvs(notice):
+
     value = notice.get(
         "classification-cpv"
     )
@@ -280,17 +153,15 @@ def get_cpvs(notice):
     return [str(value)]
 
 
-def get_notice_url(notice):
-    """
-    Usa a ligação oficial devolvida pelo TED.
-    """
+def get_url(notice):
 
-    links = notice.get("links")
+    links = notice.get("links", {})
 
     if isinstance(links, dict):
 
         html_links = links.get(
-            "html"
+            "html",
+            {}
         )
 
         if isinstance(
@@ -298,142 +169,96 @@ def get_notice_url(notice):
             dict
         ):
 
-            for language in [
+            for lang in [
                 "POR",
                 "ENG",
                 "SPA",
                 "FRA",
             ]:
 
-                if html_links.get(language):
-                    return html_links[language]
+                if html_links.get(lang):
+                    return html_links[lang]
 
-            for value in html_links.values():
-
-                if value:
-                    return value
-
-    publication_number = notice.get(
+    number = notice.get(
         "publication-number"
     )
 
-    if publication_number:
+    if number:
 
         return (
             "https://ted.europa.eu/en/"
-            f"notice/-/detail/"
-            f"{publication_number}"
+            f"notice/-/detail/{number}"
         )
 
     return "https://ted.europa.eu/"
 
 
-# ============================================================
-# CLASSIFICAÇÃO
-# ============================================================
+def classify(title):
 
-def classify_notice(
-    title,
-    cpvs,
-    query_term,
-):
-
-    text = normalize_text(
-        title
-    )
-
-    archaeology_words = [
-        "archaeolog",
-        "arqueolog",
-        "archaeological",
-        "archaeology",
-        "escavacao",
-        "excavation",
-        "excavacoes",
-        "excavation",
-        "archaeological monitoring",
-    ]
-
-    heritage_words = [
-        "cultural heritage",
-        "heritage",
-        "patrimonio cultural",
-        "historical heritage",
-        "historic monument",
-        "monument",
-        "archaeological heritage",
-    ]
-
-    construction_words = [
-        "construction",
-        "construction work",
-        "infrastructure",
-        "railway",
-        "road",
-        "highway",
-        "building",
-        "construction works",
-        "empreitada",
-    ]
-
-    direct = any(
-        word in text
-        for word in archaeology_words
-    )
-
-    heritage = any(
-        word in text
-        for word in heritage_words
-    )
-
-    construction = any(
-        word in text
-        for word in construction_words
-    )
-
-    if direct:
-        category = "Arqueologia direta"
-
-    elif heritage:
-        category = "Património cultural"
-
-    elif construction:
-        category = (
-            "Grande projeto / potencial subcontratação"
-        )
-
-    else:
-        category = "Património cultural"
-
-    return category
-
-
-def calculate_score(
-    title,
-    cpvs,
-    deadline,
-    category,
-):
-
-    text = normalize_text(
-        title
-    )
-
-    score = 30
+    text = title.lower()
 
     if any(
-        word in text
-        for word in [
+        x in text
+        for x in [
             "archaeolog",
             "arqueolog",
+            "archéolog",
+            "archäolog",
+            "archaeological",
+            "archaeology",
+            "escava",
             "excavation",
-            "escavacao",
         ]
     ):
-        score += 35
+
+        return "Arqueologia direta"
 
     if any(
-        cpv.startswith(prefix)
+        x in text
+        for x in [
+            "cultural heritage",
+            "patrimonio",
+            "heritage",
+            "historical",
+            "historic monument",
+        ]
+    ):
+
+        return "Património cultural"
+
+    return "Grande projeto / potencial subcontratação"
+
+
+def score(title, cpvs, category):
+
+    text = title.lower()
+
+    value = 30
+
+    if any(
+        x in text
+        for x in [
+            "archaeolog",
+            "arqueolog",
+            "archaeological",
+            "archaeology",
+            "excavat",
+            "escava",
+        ]
+    ):
+
+        value += 40
+
+    if category == "Arqueologia direta":
+        value += 20
+
+    elif category == "Património cultural":
+        value += 10
+
+    if any(
+        str(cpv).startswith(
+            prefix
+        )
         for cpv in cpvs
         for prefix in [
             "71351914",
@@ -443,70 +268,19 @@ def calculate_score(
             "92522000",
         ]
     ):
-        score += 20
 
-    if category == "Arqueologia direta":
-        score += 10
-
-    elif category == "Património cultural":
-        score += 5
-
-    if deadline:
-
-        today = date.today()
-
-        if deadline >= today:
-
-            days = (
-                deadline - today
-            ).days
-
-            if days <= 30:
-                score += 10
-
-            elif days <= 90:
-                score += 5
+        value += 10
 
     return min(
-        score,
+        value,
         100
     )
 
 
-# ============================================================
-# TED
-# ============================================================
-
-def search_ted(
-    query,
-    period_days=PERIOD_DAYS,
-):
-
-    today = date.today()
-
-    cutoff = (
-        today
-        - timedelta(
-            days=period_days
-        )
-    )
-
-    cutoff_text = cutoff.strftime(
-        "%Y%m%d"
-    )
-
-    # A data é filtrada no próprio TED.
-    #
-    # Ordenamos por data descendente para que
-    # os avisos mais recentes apareçam primeiro.
-    expert_query = (
-        f'{query} '
-        f'AND publication-date>={cutoff_text} '
-        f'SORT BY publication-date DESC'
-    )
+def search_ted(term):
 
     payload = {
-        "query": expert_query,
+        "query": f'notice-title~("{term}")',
         "fields": TED_FIELDS,
         "page": 1,
         "limit": 100,
@@ -525,43 +299,17 @@ def search_ted(
 
     if response.status_code != 200:
 
-        error = data.get(
-            "error"
-        )
-
-        if isinstance(
-            error,
-            list
-        ):
-            error = "; ".join(
-                str(x)
-                for x in error
-            )
-
         raise RuntimeError(
-            error
-            or data.get(
-                "message"
+            str(
+                data.get(
+                    "error",
+                    data
+                )
             )
-            or f"TED HTTP {response.status_code}"
         )
 
-    notices = data.get(
-        "notices",
-        []
-    )
+    return data
 
-    return (
-        notices,
-        data,
-        expert_query,
-        cutoff,
-    )
-
-
-# ============================================================
-# API PRINCIPAL
-# ============================================================
 
 @app.get("/api/search")
 def search(
@@ -572,65 +320,61 @@ def search(
 
     today = date.today()
 
+    cutoff = (
+        today
+        - timedelta(days=365)
+    )
+
+    terms = [
+        q.strip()
+    ]
+
+    for term in [
+        "archaeological",
+        "excavation",
+        "cultural heritage",
+        "archaeological monitoring",
+    ]:
+
+        if term.lower() not in [
+            x.lower()
+            for x in terms
+        ]:
+
+            terms.append(term)
+
     results = []
 
     diagnostics = []
 
     seen = set()
 
-    # O texto introduzido pelo utilizador passa
-    # a ser a primeira pesquisa.
-    terms = []
-
-    if q.strip():
-        terms.append(
-            q.strip()
-        )
-
-    for term in SEARCH_TERMS:
-
-        if normalize_text(term) not in [
-            normalize_text(x)
-            for x in terms
-        ]:
-            terms.append(term)
-
     for term in terms:
-
-        query = (
-            f'notice-title~("{term}")'
-        )
 
         try:
 
-            (
-                notices,
-                data,
-                expert_query,
-                cutoff,
-            ) = search_ted(
-                query
+            data = search_ted(
+                term
+            )
+
+            notices = data.get(
+                "notices",
+                []
             )
 
             added = 0
 
             for notice in notices:
 
-                publication_number = (
-                    notice.get(
-                        "publication-number"
-                    )
+                number = notice.get(
+                    "publication-number"
                 )
 
-                if not publication_number:
+                if not number:
                     continue
 
-                if publication_number in seen:
+                if number in seen:
                     continue
-
-                title = get_title(
-                    notice
-                )
 
                 publication_date = parse_date(
                     notice.get(
@@ -641,30 +385,11 @@ def search(
                 if not publication_date:
                     continue
 
-                deadline = extract_deadline(
-                    notice
-                )
-
-                # Segurança adicional:
-                # mesmo com o filtro TED, confirmamos
-                # localmente o período.
-                if (
-                    publication_date < cutoff
-                    and (
-                        not deadline
-                        or deadline < today
-                    )
-                ):
+                # Apenas últimos 365 dias.
+                if publication_date < cutoff:
                     continue
 
-                # Ignorar avisos já encerrados.
-                if (
-                    deadline
-                    and deadline < today
-                ):
-                    continue
-
-                cpvs = get_cpvs(
+                title = get_title(
                     notice
                 )
 
@@ -676,10 +401,12 @@ def search(
                     notice
                 )
 
-                classified = classify_notice(
-                    title,
-                    cpvs,
-                    term,
+                cpvs = get_cpvs(
+                    notice
+                )
+
+                classified = classify(
+                    title
                 )
 
                 if category and (
@@ -687,42 +414,32 @@ def search(
                 ):
                     continue
 
-                score = calculate_score(
-                    title,
-                    cpvs,
-                    deadline,
-                    classified,
-                )
-
-                result = {
+                item = {
                     "title": title,
                     "source": "TED",
                     "date": publication_date.isoformat(),
                     "country": country,
                     "buyer": buyer,
-                    "deadline": (
-                        deadline.isoformat()
-                        if deadline
-                        else ""
-                    ),
-                    "cpv": ", ".join(
-                        cpvs
-                    ),
+                    "deadline": "",
+                    "cpv": ", ".join(cpvs),
                     "category": classified,
-                    "score": score,
-                    "url": get_notice_url(
+                    "score": score(
+                        title,
+                        cpvs,
+                        classified
+                    ),
+                    "url": get_url(
                         notice
                     ),
-                    "publication_number":
-                        publication_number,
+                    "publication_number": number,
                 }
 
                 seen.add(
-                    publication_number
+                    number
                 )
 
                 results.append(
-                    result
+                    item
                 )
 
                 added += 1
@@ -737,8 +454,6 @@ def search(
                 "total": data.get(
                     "totalNoticeCount"
                 ),
-                "query": expert_query,
-                "period_days": period_days,
             })
 
         except Exception as e:
@@ -748,47 +463,16 @@ def search(
                 "ok": False,
                 "count": 0,
                 "error": str(e),
-                "query": query,
-                "period_days": period_days,
             })
 
-    # Ordenação:
-    # 1. concursos com prazo conhecido e futuro
-    # 2. prazo mais próximo
-    # 3. pontuação
-    # 4. publicação mais recente
-    def sort_key(item):
-
-        deadline = parse_date(
-            item.get(
-                "deadline"
-            )
-        )
-
-        publication = parse_date(
-            item.get(
-                "date"
-            )
-        )
-
-        return (
-            0 if deadline else 1,
-            deadline
-            or date.max,
-            -item.get(
-                "score",
-                0
-            ),
-            -(publication.toordinal()
-              if publication
-              else 0),
-        )
-
     results.sort(
-        key=sort_key
+        key=lambda x: (
+            -x["score"],
+            x["date"]
+        ),
+        reverse=False
     )
 
-    # Limite final para a interface.
     results = results[:100]
 
     return {
@@ -797,13 +481,9 @@ def search(
         "portal_count": 0,
         "api_count": 1,
         "searched_at": today.isoformat(),
-        "period_days": PERIOD_DAYS,
+        "period_days": 365,
     }
 
-
-# ============================================================
-# HEALTH
-# ============================================================
 
 @app.get("/api/health")
 def health():
@@ -814,10 +494,6 @@ def health():
         "api_sources": 1,
     }
 
-
-# ============================================================
-# INTERFACE
-# ============================================================
 
 @app.get("/")
 def home():
