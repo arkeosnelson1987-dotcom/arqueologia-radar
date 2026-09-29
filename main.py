@@ -1,12 +1,20 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date, timedelta
+
+from datetime import date, datetime, timedelta
 from pathlib import Path
+
 import requests
 import re
-import time
 import json
+import html
+import unicodedata
+
+
+# ============================================================
+# CONFIGURAÇÃO
+# ============================================================
 
 ROOT = Path(__file__).resolve().parent
 
@@ -15,168 +23,292 @@ app = FastAPI(title="Arqueologia Radar")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ============================================================
-# FONTES
-# ============================================================
-
-SOURCES = [
-    ("TED", "Europa", "https://ted.europa.eu/en/search", "api"),
-    ("World Bank Procurement", "Global",
-     "https://projects.worldbank.org/en/projects-operations/procurement", "portal"),
-    ("African Development Bank", "África",
-     "https://www.afdb.org/en/documents/category/general-procurement-notices", "portal"),
-    ("AfDB Specific Procurement", "África",
-     "https://www.afdb.org/en/documents/category/specific-procurement-notices", "portal"),
-    ("SAM.gov", "Américas",
-     "https://sam.gov/opportunities", "portal"),
-    ("BASE Portugal", "Europa",
-     "https://www.base.gov.pt/", "portal"),
-    ("Contratación Pública España", "Europa",
-     "https://contrataciondelestado.es/", "portal"),
-    ("UN Development Business", "Global",
-     "https://devbusiness.un.org/", "portal"),
-    ("UNGM", "Global",
-     "https://www.ungm.org/Public/Notice", "portal"),
-    ("EBRD Procurement", "Europa",
-     "https://www.ebrd.com/work-with-us/procurement.html", "portal"),
-    ("EIB Procurement", "Europa",
-     "https://www.eib.org/en/projects/procurement/index.htm", "portal"),
-    ("Oman Tender Board", "Médio Oriente",
-     "https://etendering.tenderboard.gov.om/", "portal"),
-    ("Saudi Etimad", "Médio Oriente",
-     "https://portal.etimad.sa/", "portal"),
-    ("UAE Federal Procurement", "Médio Oriente",
-     "https://procurement.gov.ae/", "portal"),
-    ("Qatar Monaqasat", "Médio Oriente",
-     "https://monaqasat.mof.gov.qa/", "portal"),
-    ("Morocco Marchés Publics", "África",
-     "https://www.marchespublics.gov.ma/", "portal"),
-    ("South Africa eTenders", "África",
-     "https://www.etenders.gov.za/", "portal"),
-    ("Uganda eGP", "África",
-     "https://egpuganda.go.ug/", "portal"),
-    ("Kenya PPIP", "África",
-     "https://tenders.go.ke/", "portal"),
-    ("Tanzania NeST", "África",
-     "https://nest.go.tz/", "portal"),
-    ("Mozambique UFSA", "África",
-     "https://www.ufsa.gov.mz/", "portal"),
-    ("ChileCompra", "Américas",
-     "https://www.mercadopublico.cl/", "portal"),
-    ("Colombia SECOP", "Américas",
-     "https://www.colombiacompra.gov.co/secop", "portal"),
-    ("Brasil Compras.gov", "Américas",
-     "https://www.gov.br/compras/", "portal"),
-    ("IDB Procurement", "Américas",
-     "https://www.iadb.org/en/how-we-work/procurement", "portal"),
-    ("Asian Development Bank", "Ásia-Pacífico",
-     "https://www.adb.org/work-with-us/procurement", "portal"),
-    ("Australia AusTender", "Ásia-Pacífico",
-     "https://www.tenders.gov.au/", "portal"),
-    ("New Zealand GETS", "Ásia-Pacífico",
-     "https://www.gets.govt.nz/", "portal"),
-]
-
-# ============================================================
-# TERMOS
-# ============================================================
-
-ARCH = [
-    "archaeology",
-    "archaeological",
-    "excavation",
-    "rescue archaeology",
-    "preventive archaeology",
-    "archaeological monitoring",
-    "archaeological survey",
-    "archaeological assessment",
-    "cultural heritage",
-    "historic environment",
-    "chance finds",
-    "heritage management",
-    "unesco",
-    "monument",
-    "archaeological investigation",
-    "archaeological works",
-    "archaeological services",
-    "archaeological research",
-    "archaeological excavation",
-    "heritage impact assessment",
-    "archaeological supervision",
-]
-
-MAJOR = [
-    "railway",
-    "rail",
-    "road",
-    "highway",
-    "mine",
-    "mining",
-    "copper",
-    "lithium",
-    "oil",
-    "gas",
-    "lng",
-    "pipeline",
-    "airport",
-    "port",
-    "dam",
-    "hydroelectric",
-    "solar",
-    "wind",
-    "energy",
-    "refinery",
-    "corridor",
-    "metro",
-    "subway",
-    "transmission line",
-    "power line",
-]
-
-# ============================================================
-# PERÍODO
-# ============================================================
+TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 
 RESULTS_DAYS = 365
 
-
-def cutoff_date():
-    return date.today() - timedelta(days=RESULTS_DAYS)
-
-
-def parse_publication_date(value):
-    if not value:
-        return None
-
-    value = str(value).strip()
-
-    match = re.search(
-        r"(\d{4})-(\d{2})-(\d{2})",
-        value
-    )
-
-    if not match:
-        return None
-
-    try:
-        return date(
-            int(match.group(1)),
-            int(match.group(2)),
-            int(match.group(3)),
-        )
-    except ValueError:
-        return None
+REQUEST_TIMEOUT = 45
 
 
 # ============================================================
-# TED
+# PORTAIS COMPLEMENTARES
 # ============================================================
 
-TED_URL = "https://api.ted.europa.eu/v3/notices/search"
+# O TED é a única fonte automática nesta versão.
+# Os restantes portais ficam catalogados para consulta.
+# A integração automática será acrescentada progressivamente.
+
+SOURCES = [
+    {
+        "name": "TED – Tenders Electronic Daily",
+        "region": "Europa",
+        "url": "https://ted.europa.eu/",
+        "mode": "api",
+    },
+
+    {
+        "name": "Portugal – BASE",
+        "region": "Europa",
+        "url": "https://www.base.gov.pt/",
+        "mode": "portal",
+    },
+    {
+        "name": "Portugal – Diário da República",
+        "region": "Europa",
+        "url": "https://diariodarepublica.pt/",
+        "mode": "portal",
+    },
+    {
+        "name": "Espanha – Plataforma de Contratación",
+        "region": "Europa",
+        "url": "https://contrataciondelestado.es/",
+        "mode": "portal",
+    },
+    {
+        "name": "França – BOAMP",
+        "region": "Europa",
+        "url": "https://www.boamp.fr/",
+        "mode": "portal",
+    },
+    {
+        "name": "França – PLACE",
+        "region": "Europa",
+        "url": "https://www.marches-publics.gouv.fr/",
+        "mode": "portal",
+    },
+    {
+        "name": "Itália – Acquisti in rete PA",
+        "region": "Europa",
+        "url": "https://www.acquistinretepa.it/",
+        "mode": "portal",
+    },
+    {
+        "name": "Alemanha – Bund.de",
+        "region": "Europa",
+        "url": "https://www.service.bund.de/",
+        "mode": "portal",
+    },
+    {
+        "name": "Países Baixos – TenderNed",
+        "region": "Europa",
+        "url": "https://www.tenderned.nl/",
+        "mode": "portal",
+    },
+    {
+        "name": "Bélgica – e-Procurement",
+        "region": "Europa",
+        "url": "https://www.publicprocurement.be/",
+        "mode": "portal",
+    },
+    {
+        "name": "Irlanda – eTenders",
+        "region": "Europa",
+        "url": "https://www.etenders.gov.ie/",
+        "mode": "portal",
+    },
+    {
+        "name": "Reino Unido – Find a Tender",
+        "region": "Europa",
+        "url": "https://www.find-tender.service.gov.uk/",
+        "mode": "portal",
+    },
+    {
+        "name": "Noruega – Doffin",
+        "region": "Europa",
+        "url": "https://www.doffin.no/",
+        "mode": "portal",
+    },
+    {
+        "name": "Suécia – Mercell",
+        "region": "Europa",
+        "url": "https://www.mercell.com/",
+        "mode": "portal",
+    },
+    {
+        "name": "Dinamarca – Udbud",
+        "region": "Europa",
+        "url": "https://www.udbud.dk/",
+        "mode": "portal",
+    },
+    {
+        "name": "Finlândia – Hilma",
+        "region": "Europa",
+        "url": "https://www.hankintailmoitukset.fi/",
+        "mode": "portal",
+    },
+    {
+        "name": "Áustria – ANKÖ",
+        "region": "Europa",
+        "url": "https://www.ankoe.at/",
+        "mode": "portal",
+    },
+    {
+        "name": "Polónia – BZP",
+        "region": "Europa",
+        "url": "https://ezamowienia.gov.pl/",
+        "mode": "portal",
+    },
+    {
+        "name": "República Checa – NEN",
+        "region": "Europa",
+        "url": "https://nen.nipez.cz/",
+        "mode": "portal",
+    },
+    {
+        "name": "Roménia – SICAP",
+        "region": "Europa",
+        "url": "https://www.e-licitatie.ro/",
+        "mode": "portal",
+    },
+    {
+        "name": "Croácia – EOJN",
+        "region": "Europa",
+        "url": "https://eojn.hr/",
+        "mode": "portal",
+    },
+    {
+        "name": "Eslovénia – e-JN",
+        "region": "Europa",
+        "url": "https://ejn.gov.si/",
+        "mode": "portal",
+    },
+    {
+        "name": "Estónia – Riigihanked",
+        "region": "Europa",
+        "url": "https://riigihanked.riik.ee/",
+        "mode": "portal",
+    },
+    {
+        "name": "Lituânia – CVP IS",
+        "region": "Europa",
+        "url": "https://viesiejipirkimai.lt/",
+        "mode": "portal",
+    },
+    {
+        "name": "Letónia – EIS",
+        "region": "Europa",
+        "url": "https://www.eis.gov.lv/",
+        "mode": "portal",
+    },
+    {
+        "name": "Grécia – Promitheus",
+        "region": "Europa",
+        "url": "https://www.promitheus.gov.gr/",
+        "mode": "portal",
+    },
+    {
+        "name": "Malta – ePPS",
+        "region": "Europa",
+        "url": "https://www.etenders.gov.mt/",
+        "mode": "portal",
+    },
+    {
+        "name": "Banco Mundial – Procurement",
+        "region": "Internacional",
+        "url": "https://projects.worldbank.org/en/projects-operations/procurement",
+        "mode": "portal",
+    },
+]
+
+
+# ============================================================
+# TERMOS DE PESQUISA / CLASSIFICAÇÃO
+# ============================================================
+
+ARCHAEOLOGY_TERMS = [
+    "archaeolog",
+    "archaeological",
+    "archaeology",
+    "archaeologist",
+    "archaeologists",
+    "excavat",
+    "archéolog",
+    "archaeologische",
+    "archäolog",
+    "archeolog",
+    "arqueolog",
+    "arqueología",
+    "arqueologia",
+    "archeologia",
+    "archéologie",
+    "archäologie",
+    "archäologie",
+    "archäolog",
+    "heritage",
+    "cultural heritage",
+    "archaeological heritage",
+    "historic heritage",
+    "monuments",
+    "monument",
+    "heritage assessment",
+    "heritage impact",
+    "cultural property",
+    "cultural assets",
+    "historic environment",
+    "archaeological monitoring",
+    "archaeological survey",
+    "archaeological investigation",
+    "archaeological excavation",
+    "archaeological evaluation",
+    "watching brief",
+    "archaeological watching",
+    "rescue archaeology",
+    "preventive archaeology",
+    "underwater archaeology",
+    "maritime archaeology",
+    "industrial archaeology",
+    "building archaeology",
+    "landscape archaeology",
+]
+
+MAJOR_PROJECT_TERMS = [
+    "railway",
+    "rail",
+    "high speed rail",
+    "road",
+    "motorway",
+    "highway",
+    "bridge",
+    "tunnel",
+    "airport",
+    "port",
+    "harbour",
+    "harbor",
+    "dam",
+    "reservoir",
+    "pipeline",
+    "gas pipeline",
+    "water pipeline",
+    "power line",
+    "electricity",
+    "substation",
+    "wind farm",
+    "solar farm",
+    "photovoltaic",
+    "offshore wind",
+    "renewable energy",
+    "energy infrastructure",
+    "infrastructure",
+    "construction",
+    "urban development",
+    "development project",
+    "housing development",
+    "industrial park",
+    "metro",
+    "tram",
+    "hydroelectric",
+    "irrigation",
+]
+
+
+# ============================================================
+# TED FIELDS
+# ============================================================
 
 TED_FIELDS = [
     "publication-number",
@@ -186,61 +318,78 @@ TED_FIELDS = [
     "buyer-country",
     "classification-cpv",
     "notice-type",
+    "procedure-identifier",
+    "deadline",
+    "deadline-date-lot",
+    "deadline-date-part",
 ]
 
 
 # ============================================================
-# FUNÇÕES AUXILIARES
+# UTILITÁRIOS
 # ============================================================
 
 def repair_text(value):
+    """
+    Corrige alguns casos de mojibake que podem surgir
+    quando texto UTF-8 é interpretado como Windows-1252/Latin-1.
+    """
+
+    if value is None:
+        return ""
 
     if not isinstance(value, str):
-        return value
+        return str(value)
 
-    suspicious = (
-        "Ã", "Â", "â", "ð", "Ð", "Ñ",
-        "Ä", "Å", "Æ", "Ç", "Ë", "Î",
-        "Ï", "Š", "™"
+    text = html.unescape(value)
+
+    # Corrigir apenas quando há fortes indícios de mojibake.
+    bad_markers = (
+        "Ã",
+        "Â",
+        "â€",
+        "ðŸ",
+        "Ð",
+        "Ñ",
+        "Ä",
+        "Å",
+        "Ç",
+        "È",
+        "É",
+        "Ê",
+        "Ë",
+        "Î",
+        "Ï",
+        "Ô",
+        "Õ",
+        "Ö",
+        "Ø",
+        "Ù",
+        "Ú",
+        "Ü",
+        "Ý",
     )
 
-    if not any(
-        char in value
-        for char in suspicious
-    ):
-        return value
+    if any(marker in text for marker in bad_markers):
+        try:
+            repaired = text.encode("latin1").decode("utf-8")
 
-    try:
+            # Só aceitar se a transformação reduzir sinais de corrupção.
+            old_bad = sum(text.count(x) for x in bad_markers)
+            new_bad = sum(repaired.count(x) for x in bad_markers)
 
-        repaired = (
-            value
-            .encode("latin1")
-            .decode("utf-8")
-        )
+            if new_bad <= old_bad:
+                text = repaired
+        except Exception:
+            pass
 
-        old_count = sum(
-            value.count(x)
-            for x in suspicious
-        )
-
-        new_count = sum(
-            repaired.count(x)
-            for x in suspicious
-        )
-
-        if new_count < old_count:
-            return repaired
-
-    except (
-        UnicodeEncodeError,
-        UnicodeDecodeError
-    ):
-        pass
-
-    return value
+    return text.strip()
 
 
 def flatten(value):
+    """
+    Transforma estruturas TED em texto simples.
+    """
 
     if value is None:
         return ""
@@ -248,723 +397,1063 @@ def flatten(value):
     if isinstance(value, str):
         return repair_text(value)
 
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float, bool)):
         return str(value)
 
     if isinstance(value, list):
-
-        values = []
+        parts = []
 
         for item in value:
+            part = flatten(item)
 
-            text = flatten(item)
+            if part:
+                parts.append(part)
 
-            if text:
-                values.append(text)
-
-        return " | ".join(values)
+        return " | ".join(parts)
 
     if isinstance(value, dict):
-
         preferred = [
-            "eng",
-            "en",
-            "por",
-            "pt",
-            "spa",
-            "es",
-            "fra",
-            "fr",
+            "value",
+            "text",
+            "content",
+            "name",
+            "label",
+            "date",
+            "id",
         ]
 
         for key in preferred:
-
             if key in value:
+                result = flatten(value[key])
 
-                text = flatten(
-                    value[key]
-                )
+                if result:
+                    return result
 
-                if text:
-                    return text
+        parts = []
 
-        values = []
+        for key, item in value.items():
+            result = flatten(item)
 
-        for item in value.values():
+            if result:
+                parts.append(result)
 
-            text = flatten(item)
-
-            if text:
-                values.append(text)
-
-        return " | ".join(values)
+        return " | ".join(parts)
 
     return str(value)
 
 
-def clean_query(text):
+def clean_query(q):
+    q = repair_text(q or "").strip()
 
-    text = str(
-        text or ""
-    ).strip()
+    q = re.sub(r"\s+", " ", q)
 
-    text = re.sub(
-        r'["\\]',
-        " ",
-        text
+    return q
+
+
+def normalise_key(value):
+    """
+    Normalização para deduplicação.
+    """
+
+    value = repair_text(value or "").lower()
+
+    value = unicodedata.normalize(
+        "NFKD",
+        value,
     )
 
-    return text
+    value = "".join(
+        c for c in value
+        if not unicodedata.combining(c)
+    )
+
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+
+    value = re.sub(r"\s+", " ", value).strip()
+
+    return value
 
 
-# ============================================================
-# CONSULTA TED
-# ============================================================
+def parse_date(value):
+    """
+    Converte datas TED para date.
+    """
+
+    if not value:
+        return None
+
+    text = flatten(value).strip()
+
+    # ISO date/time
+    match = re.search(
+        r"(\d{4})-(\d{2})-(\d{2})",
+        text,
+    )
+
+    if match:
+        try:
+            return date(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+            )
+        except Exception:
+            pass
+
+    # DD/MM/YYYY
+    match = re.search(
+        r"(\d{2})/(\d{2})/(\d{4})",
+        text,
+    )
+
+    if match:
+        try:
+            return date(
+                int(match.group(3)),
+                int(match.group(2)),
+                int(match.group(1)),
+            )
+        except Exception:
+            pass
+
+    # YYYYMMDD
+    match = re.search(
+        r"\b(\d{4})(\d{2})(\d{2})\b",
+        text,
+    )
+
+    if match:
+        try:
+            return date(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+            )
+        except Exception:
+            pass
+
+    return None
+
+
+def format_date(value):
+    parsed = parse_date(value)
+
+    if not parsed:
+        return repair_text(value)
+
+    return parsed.strftime("%d/%m/%Y")
+
+
+def first_non_empty(data, keys):
+    for key in keys:
+
+        if key not in data:
+            continue
+
+        value = flatten(data.get(key))
+
+        if value:
+            return value
+
+    return ""
+
+
+def extract_notice_number(notice):
+    return first_non_empty(
+        notice,
+        [
+            "publication-number",
+            "publicationNumber",
+            "notice-publication-number",
+        ],
+    )
+
+
+def extract_procedure_id(notice):
+    return first_non_empty(
+        notice,
+        [
+            "procedure-identifier",
+            "procedureIdentifier",
+            "procedure-id",
+        ],
+    )
+
+
+def extract_publication_date(notice):
+    return first_non_empty(
+        notice,
+        [
+            "publication-date",
+            "publicationDate",
+            "notice-publication-date",
+        ],
+    )
+
+
+def extract_deadline(notice):
+    """
+    TED disponibiliza o campo 'deadline-date-lot'
+    e também o campo agregado 'deadline'.
+
+    Tentamos primeiro os campos específicos e depois
+    o agregado.
+    """
+
+    value = first_non_empty(
+        notice,
+        [
+            "deadline-date-lot",
+            "deadline-date-part",
+            "deadline",
+        ],
+    )
+
+    return value
+
+
+def extract_title(notice):
+    return first_non_empty(
+        notice,
+        [
+            "notice-title",
+            "title",
+        ],
+    )
+
+
+def extract_buyer(notice):
+    return first_non_empty(
+        notice,
+        [
+            "buyer-name",
+            "buyerName",
+            "organisation-name-buyer",
+            "organization-name-buyer",
+        ],
+    )
+
+
+def extract_country(notice):
+    return first_non_empty(
+        notice,
+        [
+            "buyer-country",
+            "buyerCountry",
+            "country",
+        ],
+    )
+
+
+def extract_cpv(notice):
+    return first_non_empty(
+        notice,
+        [
+            "classification-cpv",
+            "classificationCpv",
+            "cpv",
+        ],
+    )
+
+
+def extract_notice_type(notice):
+    return first_non_empty(
+        notice,
+        [
+            "notice-type",
+            "noticeType",
+            "form-type",
+        ],
+    )
+
 
 def build_ted_query(q):
-
     q = clean_query(q)
 
     if not q:
         q = "archaeology"
 
-    return f'FT~({q})'
+    return f"FT~({q})"
 
 
 # ============================================================
 # CLASSIFICAÇÃO
 # ============================================================
 
-def classify(text, cpv=""):
+def contains_term(text, terms):
+    normalized = normalise_key(text)
 
-    t = text.lower()
-    c = cpv.lower()
+    for term in terms:
+        term_normalized = normalise_key(term)
 
-    archaeology_matches = [
-        word
-        for word in ARCH
-        if word in t
-    ]
+        if term_normalized and term_normalized in normalized:
+            return True
 
-    major_matches = [
-        word
-        for word in MAJOR
-        if word in t
-    ]
+    return False
 
-    # CPV específico relacionado com serviços arqueológicos
-    archaeological_cpv = (
-        "71351914"
+
+def classify_result(title, buyer, cpv):
+    text = " ".join(
+        [
+            title or "",
+            buyer or "",
+            cpv or "",
+        ]
     )
 
-    direct_cpv = archaeological_cpv in c
-
-    a = len(
-        archaeology_matches
+    archaeology = contains_term(
+        text,
+        ARCHAEOLOGY_TERMS,
     )
 
-    m = len(
-        major_matches
+    major = contains_term(
+        text,
+        MAJOR_PROJECT_TERMS,
     )
 
-    if direct_cpv or a >= 2:
+    # CPV específico para arqueologia.
+    cpv_normalized = normalise_key(cpv)
 
-        return (
-            "Arqueologia direta",
-            min(
-                100,
-                70 + a * 5 + m * 2
-            )
-        )
+    if "71351914" in cpv_normalized:
+        return "Arqueologia direta"
 
-    if a >= 1 and m >= 1:
+    if archaeology and major:
+        return "Acompanhamento arqueológico"
 
-        return (
-            "Acompanhamento arqueológico",
-            min(
-                100,
-                65 + a * 5 + m * 3
-            )
-        )
+    if archaeology:
+        return "Arqueologia / Património"
 
-    if a >= 1:
+    if major:
+        return "Grande projeto / potencial subcontratação"
 
-        return (
-            "Património cultural",
-            min(
-                100,
-                50 + a * 5 + m * 2
-            )
-        )
+    return "Outro"
 
-    if m:
 
-        return (
-            "Grande projeto / potencial subcontratação",
-            min(
-                100,
-                25 + m * 4
-            )
-        )
+def calculate_score(
+    title,
+    buyer,
+    cpv,
+    publication_date,
+    deadline,
+    category,
+):
+    """
+    Pontuação de relevância.
+    Não representa qualidade da entidade contratante:
+    é apenas uma prioridade interna do Radar.
+    """
 
-    return "Outro", 0
+    text = " ".join(
+        [
+            title or "",
+            buyer or "",
+            cpv or "",
+        ]
+    )
+
+    score = 20
+
+    normalized = normalise_key(text)
+
+    if "71351914" in normalise_key(cpv):
+        score += 45
+
+    if contains_term(
+        normalized,
+        [
+            "archaeological excavation",
+            "archaeological monitoring",
+            "archaeological survey",
+            "archaeological evaluation",
+            "archaeological investigation",
+        ],
+    ):
+        score += 20
+
+    elif contains_term(
+        normalized,
+        ARCHAEOLOGY_TERMS,
+    ):
+        score += 12
+
+    if category == "Acompanhamento arqueológico":
+        score += 12
+
+    elif category == "Arqueologia direta":
+        score += 15
+
+    elif category == "Arqueologia / Património":
+        score += 8
+
+    elif category == "Grande projeto / potencial subcontratação":
+        score += 5
+
+    publication = parse_date(publication_date)
+
+    if publication:
+        age = (date.today() - publication).days
+
+        if age <= 30:
+            score += 15
+
+        elif age <= 90:
+            score += 10
+
+        elif age <= RESULTS_DAYS:
+            score += 5
+
+    deadline_date = parse_date(deadline)
+
+    if deadline_date:
+        days_to_deadline = (
+            deadline_date - date.today()
+        ).days
+
+        if 0 <= days_to_deadline <= 14:
+            score += 15
+
+        elif 14 < days_to_deadline <= 30:
+            score += 10
+
+        elif 30 < days_to_deadline <= 90:
+            score += 5
+
+    return min(score, 100)
 
 
 # ============================================================
-# PESQUISA TED
+# ESTADO
 # ============================================================
 
-def ted(q):
+def determine_status(
+    publication_date,
+    deadline,
+):
+    publication = parse_date(publication_date)
+    deadline_date = parse_date(deadline)
 
+    today = date.today()
+
+    if deadline_date:
+
+        if deadline_date < today:
+            return "Prazo terminado"
+
+        if deadline_date == today:
+            return "Prazo termina hoje"
+
+        days = (
+            deadline_date - today
+        ).days
+
+        if days <= 7:
+            return "Prazo termina em breve"
+
+        if days <= 30:
+            return "Em prazo"
+
+        return "Em prazo"
+
+    if publication:
+        age = (
+            today - publication
+        ).days
+
+        if age <= RESULTS_DAYS:
+            return "Publicação recente"
+
+        return "Ativo — publicação anterior"
+
+    return "Estado não identificado"
+
+
+# ============================================================
+# URL TED
+# ============================================================
+
+def build_ted_url(publication_number):
+    if not publication_number:
+        return "https://ted.europa.eu/"
+
+    return (
+        "https://ted.europa.eu/en/notice/-/detail/"
+        + publication_number
+    )
+
+
+# ============================================================
+# TED
+# ============================================================
+
+def search_ted(q):
     expert_query = build_ted_query(q)
 
     body = {
         "query": expert_query,
+
         "fields": TED_FIELDS,
+
         "limit": 250,
+
         "scope": "ACTIVE",
+
         "paginationMode": "PAGE_NUMBER",
+
         "page": 1,
+
         "checkQuerySyntax": False,
     }
 
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Arqueologia-Radar/1.0",
-    }
+    try:
 
-    last_error = None
-    data = None
+        response = requests.post(
+            TED_URL,
+            json=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
 
-    for attempt in range(3):
+        response.raise_for_status()
 
-        try:
+        raw = response.content.decode(
+            "utf-8",
+            errors="replace",
+        )
 
-            response = requests.post(
-                TED_URL,
-                json=body,
-                headers=headers,
-                timeout=45,
-            )
+        data = json.loads(raw)
 
-            if response.status_code in (
-                429,
-                500,
-                502,
-                503,
-                504,
-            ) and attempt < 2:
+        notices = data.get(
+            "notices",
+            [],
+        )
 
-                time.sleep(
-                    2 ** attempt
-                )
+        if not isinstance(notices, list):
+            notices = []
 
+        results = []
+
+        recent_cutoff = (
+            date.today()
+            - timedelta(days=RESULTS_DAYS)
+        )
+
+        skipped_irrelevant = 0
+        skipped_old_without_deadline = 0
+
+        for notice in notices:
+
+            if not isinstance(notice, dict):
                 continue
 
-            if not response.ok:
+            title = extract_title(notice)
+            buyer = extract_buyer(notice)
+            country = extract_country(notice)
+            cpv = extract_cpv(notice)
+            notice_type = extract_notice_type(notice)
 
-                detail = response.text[:2000]
+            publication_number = extract_notice_number(
+                notice
+            )
 
-                raise RuntimeError(
-                    f"TED HTTP {response.status_code}: {detail}"
-                )
+            procedure_id = extract_procedure_id(
+                notice
+            )
 
-            try:
+            publication_date = extract_publication_date(
+                notice
+            )
 
-                data_text = (
-                    response
-                    .content
-                    .decode("utf-8")
-                )
+            deadline = extract_deadline(
+                notice
+            )
 
-                data = json.loads(
-                    data_text
-                )
+            publication_parsed = parse_date(
+                publication_date
+            )
 
-            except (
-                UnicodeDecodeError,
-                ValueError
+            deadline_parsed = parse_date(
+                deadline
+            )
+
+            # ------------------------------------------------
+            # Confirmar que existe relevância arqueológica.
+            # ------------------------------------------------
+
+            searchable_text = " ".join(
+                [
+                    title,
+                    buyer,
+                    country,
+                    cpv,
+                    notice_type,
+                ]
+            )
+
+            is_archaeological = contains_term(
+                searchable_text,
+                ARCHAEOLOGY_TERMS,
+            )
+
+            is_archaeological_cpv = (
+                "71351914"
+                in normalise_key(cpv)
+            )
+
+            if not (
+                is_archaeological
+                or is_archaeological_cpv
             ):
+                skipped_irrelevant += 1
+                continue
 
-                data = response.json()
+            # ------------------------------------------------
+            # Não eliminamos automaticamente concursos
+            # antigos que o TED classifica como ACTIVE.
+            #
+            # Mas guardamos a informação para mostrar
+            # ao utilizador que a publicação é antiga.
+            # ------------------------------------------------
 
-            break
+            if (
+                publication_parsed
+                and publication_parsed < recent_cutoff
+                and not deadline_parsed
+            ):
+                skipped_old_without_deadline += 1
 
-        except Exception as exc:
+            category = classify_result(
+                title,
+                buyer,
+                cpv,
+            )
 
-            last_error = exc
+            status = determine_status(
+                publication_date,
+                deadline,
+            )
 
-            if attempt < 2:
+            score = calculate_score(
+                title,
+                buyer,
+                cpv,
+                publication_date,
+                deadline,
+                category,
+            )
 
-                time.sleep(
-                    2 ** attempt
+            # ------------------------------------------------
+            # Chave de deduplicação
+            #
+            # Primeiro usamos o procedure-identifier.
+            # Quando não existe, usamos publication-number.
+            # Em último recurso usamos título + comprador.
+            # ------------------------------------------------
+
+            if procedure_id:
+                dedup_key = (
+                    "procedure:"
+                    + normalise_key(procedure_id)
+                )
+
+            elif publication_number:
+                dedup_key = (
+                    "publication:"
+                    + normalise_key(publication_number)
                 )
 
             else:
-
-                raise RuntimeError(
-                    str(last_error)
+                dedup_key = (
+                    "title:"
+                    + normalise_key(title)
+                    + "|buyer:"
+                    + normalise_key(buyer)
                 )
 
-    if not isinstance(
-        data,
-        dict
-    ):
+            results.append(
+                {
+                    "title": repair_text(title),
 
-        raise RuntimeError(
-            "O TED devolveu uma resposta inesperada."
-        )
+                    "source": "TED",
 
-    notices = data.get(
-        "notices",
-        []
-    )
+                    "date": format_date(
+                        publication_date
+                    ),
 
-    if not isinstance(
-        notices,
-        list
-    ):
+                    "publication_date": (
+                        publication_parsed.isoformat()
+                        if publication_parsed
+                        else ""
+                    ),
 
-        notices = []
+                    "deadline": format_date(
+                        deadline
+                    ),
 
-    results = []
+                    "deadline_date": (
+                        deadline_parsed.isoformat()
+                        if deadline_parsed
+                        else ""
+                    ),
 
-    minimum_date = cutoff_date()
+                    "status": status,
 
-    skipped_old = 0
-    skipped_no_date = 0
+                    "country": repair_text(
+                        country
+                    ),
 
-    for notice in notices:
+                    "buyer": repair_text(
+                        buyer
+                    ),
 
-        if not isinstance(
-            notice,
-            dict
-        ):
-            continue
+                    "cpv": repair_text(
+                        cpv
+                    ),
 
-        publication_number = flatten(
-            notice.get(
-                "publication-number"
-            )
-        )
+                    "notice_type": repair_text(
+                        notice_type
+                    ),
 
-        title = (
-            flatten(
-                notice.get(
-                    "notice-title"
-                )
-            )
-            or "Concurso TED"
-        )
+                    "publication_number": (
+                        publication_number
+                    ),
 
-        buyer = flatten(
-            notice.get(
-                "buyer-name"
-            )
-        )
+                    "procedure_id": (
+                        procedure_id
+                    ),
 
-        country = flatten(
-            notice.get(
-                "buyer-country"
-            )
-        )
+                    "category": category,
 
-        cpv = flatten(
-            notice.get(
-                "classification-cpv"
-            )
-        )
+                    "score": score,
 
-        notice_type = flatten(
-            notice.get(
-                "notice-type"
-            )
-        )
+                    "url": build_ted_url(
+                        publication_number
+                    ),
 
-        publication_date = flatten(
-            notice.get(
-                "publication-date"
-            )
-        )
-
-        # ----------------------------------------------------
-        # DATA
-        # ----------------------------------------------------
-
-        pub_date = parse_publication_date(
-            publication_date
-        )
-
-        if pub_date is not None:
-            if pub_date < minimum_date:
-                skipped_old += 1
-
-                # IMPORTANTE:
-                # O âmbito ACTIVE do TED inclui concursos
-                # cuja publicação original pode ser antiga,
-                # mas que continuam ativos.
-                #
-                # Por isso NÃO eliminamos aqui.
-                pass
-
-        else:
-            skipped_no_date += 1
-
-        # ----------------------------------------------------
-        # CLASSIFICAÇÃO
-        # ----------------------------------------------------
-
-        full_text = " ".join([
-            title,
-            buyer,
-            country,
-            cpv,
-            notice_type,
-            flatten(notice),
-        ])
-
-        category, score = classify(
-            full_text,
-            cpv,
-        )
-
-        # ----------------------------------------------------
-        # URL
-        # ----------------------------------------------------
-
-        if publication_number:
-
-            url = (
-                "https://ted.europa.eu/en/notice/"
-                f"-/detail/{publication_number}"
+                    "_dedup_key": dedup_key,
+                }
             )
 
-        else:
+        # ====================================================
+        # DEDUPLICAÇÃO
+        # ====================================================
 
-            url = (
-                "https://ted.europa.eu/en/search"
-            )
+        unique = {}
 
-        results.append({
+        for result in results:
 
-            "title": title,
-            "source": "TED",
-            "date": publication_date,
-            "deadline": "",
-            "country": country,
-            "buyer": buyer,
-            "cpv": cpv,
-            "notice_type": notice_type,
-            "url": url,
-            "category": category,
-            "score": score,
+            key = result["_dedup_key"]
 
-        })
-
-    # ========================================================
-    # REMOVER DUPLICADOS
-    # ========================================================
-
-    unique = {}
-
-    for result in results:
-
-        key = (
-            re.sub(
-                r"\s+",
-                " ",
-                result["title"].lower()
-            ).strip()
-            + "|"
-            + re.sub(
-                r"\s+",
-                " ",
-                result["buyer"].lower()
-            ).strip()
-        )
-
-        if key not in unique:
-
-            unique[key] = result
-
-        else:
+            if key not in unique:
+                unique[key] = result
+                continue
 
             old = unique[key]
 
-            if result["date"] > old["date"]:
+            # Preferimos o aviso mais recente.
+            new_date = parse_date(
+                result.get("date")
+            )
+
+            old_date = parse_date(
+                old.get("date")
+            )
+
+            replace = False
+
+            if new_date and old_date:
+
+                if new_date > old_date:
+                    replace = True
+
+                elif (
+                    new_date == old_date
+                    and result["score"] > old["score"]
+                ):
+                    replace = True
+
+            elif new_date and not old_date:
+                replace = True
+
+            elif (
+                result["score"]
+                > old["score"]
+            ):
+                replace = True
+
+            if replace:
                 unique[key] = result
 
-    results = list(
-        unique.values()
-    )
+        results = list(unique.values())
 
-    return results, {
+        # ====================================================
+        # ORDENAR
+        #
+        # Primeiro relevância.
+        # Depois prazo.
+        # Depois publicação.
+        # ====================================================
 
-        "source": "TED",
-        "ok": True,
-        "count": len(results),
-        "total": data.get(
-            "totalNoticeCount"
-        ),
-        "query": expert_query,
-        "period_days": RESULTS_DAYS,
-        "from_date": minimum_date.isoformat(),
-        "skipped_old": skipped_old,
-        "without_recognized_date": skipped_no_date,
+        def sort_key(item):
 
-    }
+            deadline_date = parse_date(
+                item.get("deadline")
+            )
 
+            publication_date = parse_date(
+                item.get("date")
+            )
 
-# ============================================================
-# FONTES
-# ============================================================
+            # Prazo futuro recebe prioridade.
+            if deadline_date:
+                deadline_rank = (
+                    1
+                    if deadline_date >= date.today()
+                    else 0
+                )
+            else:
+                deadline_rank = 0
 
-@app.get("/api/sources")
-def sources():
+            deadline_timestamp = (
+                deadline_date.toordinal()
+                if deadline_date
+                else 0
+            )
 
-    return [
+            publication_timestamp = (
+                publication_date.toordinal()
+                if publication_date
+                else 0
+            )
 
-        {
-            "name": name,
-            "region": region,
-            "url": url,
-            "mode": mode,
+            return (
+                item["score"],
+                deadline_rank,
+                deadline_timestamp,
+                publication_timestamp,
+            )
+
+        results.sort(
+            key=sort_key,
+            reverse=True,
+        )
+
+        # Retirar chave interna.
+        for result in results:
+            result.pop(
+                "_dedup_key",
+                None,
+            )
+
+        diagnostics = {
+            "source": "TED",
+            "ok": True,
+            "count": len(results),
+            "total": data.get(
+                "totalNoticeCount"
+            ),
+            "query": expert_query,
+            "period_days": RESULTS_DAYS,
+            "from_date": recent_cutoff.isoformat(),
+            "active_scope": True,
+            "skipped_irrelevant": skipped_irrelevant,
+            "old_active_without_deadline":
+                skipped_old_without_deadline,
         }
 
-        for name, region, url, mode
-        in SOURCES
+        return results, diagnostics
 
-    ]
+    except requests.exceptions.Timeout:
 
-
-# ============================================================
-# PESQUISA
-# ============================================================
-
-@app.get("/api/search")
-def search(
-    q: str = Query(
-        "archaeology"
-    ),
-    region: str = "",
-    category: str = "",
-):
-
-    results = []
-
-    diagnostics = []
-
-    try:
-
-        ted_results, status = ted(q)
-
-        results.extend(
-            ted_results
-        )
-
-        diagnostics.append(
-            status
-        )
-
-    except Exception as exc:
-
-        diagnostics.append({
-
+        return [], {
             "source": "TED",
             "ok": False,
             "count": 0,
-            "error": str(exc),
+            "total": None,
+            "query": expert_query,
+            "error": (
+                "O TED demorou demasiado tempo "
+                "a responder."
+            ),
+        }
 
-        })
+    except requests.exceptions.RequestException as exc:
 
-    # ========================================================
-    # FILTRO DE REGIÃO
-    # ========================================================
+        return [], {
+            "source": "TED",
+            "ok": False,
+            "count": 0,
+            "total": None,
+            "query": expert_query,
+            "error": (
+                "Erro de comunicação com o TED: "
+                + str(exc)
+            ),
+        }
+
+    except Exception as exc:
+
+        return [], {
+            "source": "TED",
+            "ok": False,
+            "count": 0,
+            "total": None,
+            "query": expert_query,
+            "error": (
+                "Erro ao processar resposta TED: "
+                + str(exc)
+            ),
+        }
+
+
+# ============================================================
+# API — SOURCES
+# ============================================================
+
+@app.get("/api/sources")
+def api_sources():
+
+    return SOURCES
+
+
+# ============================================================
+# API — SEARCH
+# ============================================================
+
+@app.get("/api/search")
+def api_search(
+    q: str = Query(
+        default="archaeology"
+    ),
+
+    region: str = Query(
+        default=""
+    ),
+
+    category: str = Query(
+        default=""
+    ),
+):
+
+    q = clean_query(q)
+
+    if not q:
+        q = "archaeology"
+
+    results, ted_diagnostic = search_ted(q)
+
+    # --------------------------------------------------------
+    # Filtros do interface
+    # --------------------------------------------------------
 
     if region:
 
-        region_map = {
+        region_normalized = normalise_key(
+            region
+        )
 
-            "Europa": [
-                "Europa",
-                "Global",
-            ],
-
-            "África": [
-                "África",
-                "Global",
-            ],
-
-            "Médio Oriente": [
-                "Médio Oriente",
-                "Global",
-            ],
-
-            "Américas": [
-                "Américas",
-                "Global",
-            ],
-
-            "Ásia-Pacífico": [
-                "Ásia-Pacífico",
-                "Global",
-            ],
-
-        }
-
-        # O TED é europeu.
-        # Para já, só classificamos por país,
-        # sem eliminar resultados automaticamente.
-        if region != "Europa":
-            results = []
-
-    # ========================================================
-    # FILTRO DE CATEGORIA
-    # ========================================================
+        results = [
+            result
+            for result in results
+            if region_normalized
+            in normalise_key(
+                result.get(
+                    "country",
+                    "",
+                )
+            )
+            or region_normalized
+            == "europa"
+        ]
 
     if category:
 
-        results = [
+        category_normalized = normalise_key(
+            category
+        )
 
-            result
+        filtered = []
 
-            for result in results
+        for result in results:
 
-            if result.get(
-                "category"
-            ) == category
-
-        ]
-
-    # ========================================================
-    # ORDENAÇÃO
-    # ========================================================
-
-    results.sort(
-
-        key=lambda x: (
-
-            x.get(
-                "score",
-                0
-            ),
-
-            x.get(
-                "date",
-                ""
-            ),
-
-        ),
-
-        reverse=True,
-
-    )
-
-    # ========================================================
-    # RESPOSTA
-    # ========================================================
-
-    return {
-
-        "results": results,
-
-        "diagnostics": diagnostics,
-
-        "portal_count": sum(
-
-            1
-
-            for source in SOURCES
-
-            if source[3] == "portal"
-
-            and (
-
-                not region
-
-                or source[1] in (
-                    region,
-                    "Global",
+            result_category = normalise_key(
+                result.get(
+                    "category",
+                    "",
                 )
-
             )
 
-        ),
+            if (
+                category_normalized
+                in result_category
+                or result_category
+                in category_normalized
+            ):
+                filtered.append(result)
 
-        "api_count": sum(
-
-            1
-
-            for source in SOURCES
-
-            if source[3] == "api"
-
-        ),
-
-        "searched_at": (
-            date.today().isoformat()
-        ),
-
-    }
-
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
-
-@app.get("/api/health")
-def health():
+        results = filtered
 
     return {
+        "results": results,
 
-        "ok": True,
+        "diagnostics": [
+            ted_diagnostic
+        ],
 
-        "sources": len(
+        "portal_count": len(
             SOURCES
         ),
 
-        "api_sources": sum(
-
+        "api_count": sum(
             1
-
             for source in SOURCES
-
-            if source[3] == "api"
-
+            if source.get("mode") == "api"
         ),
 
+        "searched_at": date.today().isoformat(),
     }
 
 
 # ============================================================
-# PÁGINA PRINCIPAL
+# API — HEALTH
+# ============================================================
+
+@app.get("/api/health")
+def api_health():
+
+    return {
+        "ok": True,
+        "sources": len(SOURCES),
+        "api_sources": sum(
+            1
+            for source in SOURCES
+            if source.get("mode") == "api"
+        ),
+    }
+
+
+# ============================================================
+# FRONTEND
 # ============================================================
 
 @app.get("/")
-def home():
+def root():
 
     return FileResponse(
         ROOT / "index.html"
     )
 
 
-# ============================================================
-# JAVASCRIPT
-# ============================================================
-
 @app.get("/app.js")
-def js():
+def javascript():
 
     return FileResponse(
         ROOT / "app.js",
         media_type="application/javascript",
     )
 
-
-# ============================================================
-# MANIFEST
-# ============================================================
 
 @app.get("/manifest.json")
 def manifest():
