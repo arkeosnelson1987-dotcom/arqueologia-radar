@@ -906,7 +906,8 @@ def search(
         key=result_sort_key
     )
     # Limite razoável para o interface.
-    results = results[:100]
+    # Não limitar os resultados encontrados.
+    # Todos os resultados válidos são enviados para o interface.
     # Ordenar diagnósticos pelo nome do termo.
     diagnostics.sort(
         key=lambda x: x["source"]
