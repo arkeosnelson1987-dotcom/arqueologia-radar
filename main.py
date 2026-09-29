@@ -16,6 +16,10 @@ TED_FIELDS = [
     "publication-number",
     "publication-date",
     "notice-title",
+    "buyer-name",
+    "buyer-country",
+    "classification-cpv",
+    "notice-type",
 ]
 
 
@@ -23,7 +27,7 @@ TED_FIELDS = [
 def search():
 
     payload = {
-        "query": "",
+        "query": 'notice-title~"archaeology"',
         "fields": TED_FIELDS,
         "page": 1,
         "limit": 10,
