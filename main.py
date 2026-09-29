@@ -16,10 +16,6 @@ TED_FIELDS = [
     "publication-number",
     "publication-date",
     "notice-title",
-    "buyer-name",
-    "buyer-country",
-    "classification-cpv",
-    "notice-type",
 ]
 
 
@@ -27,7 +23,7 @@ TED_FIELDS = [
 def search():
 
     payload = {
-        "query": 'FT~("archaeology")',
+        "query": "",
         "fields": TED_FIELDS,
         "page": 1,
         "limit": 10,
@@ -72,23 +68,16 @@ def search():
 
 @app.get("/api/health")
 def health():
-
-    return {
-        "ok": True
-    }
+    return {"ok": True}
 
 
 @app.get("/")
 def home():
-
-    return FileResponse(
-        ROOT / "index.html"
-    )
+    return FileResponse(ROOT / "index.html")
 
 
 @app.get("/app.js")
 def javascript():
-
     return FileResponse(
         ROOT / "app.js",
         media_type="application/javascript"
@@ -97,7 +86,6 @@ def javascript():
 
 @app.get("/manifest.json")
 def manifest():
-
     return FileResponse(
         ROOT / "manifest.json",
         media_type="application/manifest+json"
