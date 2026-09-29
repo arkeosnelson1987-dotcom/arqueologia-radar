@@ -7,7 +7,6 @@ import re
 import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 
 # ============================================================
@@ -36,189 +35,60 @@ SOURCES = [
         "region": "Europa",
         "mode": "api",
     },
-
     {
         "name": "Diário da República",
         "url": "https://diariodarepublica.pt/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "BASE — Contratos Públicos",
         "url": "https://www.base.gov.pt/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "UK Find a Tender",
         "url": "https://www.find-tender.service.gov.uk/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "Contracts Finder",
         "url": "https://www.contractsfinder.service.gov.uk/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "eTenders Ireland",
         "url": "https://www.etenders.gov.ie/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "Mercell",
         "url": "https://www.mercell.com/",
         "region": "Europa",
         "mode": "portal",
     },
-
-    {
-        "name": "TED Europa",
-        "url": "https://ted.europa.eu/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "SIMAP",
-        "url": "https://simap.ted.europa.eu/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
     {
         "name": "France Marchés",
         "url": "https://www.marches-publics.gouv.fr/",
         "region": "Europa",
         "mode": "portal",
     },
-
     {
         "name": "BOAMP",
         "url": "https://www.boamp.fr/",
         "region": "Europa",
         "mode": "portal",
     },
-
-    {
-        "name": "ANAC",
-        "url": "https://www.anticorruzione.it/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "eProcurement Italy",
-        "url": "https://www.acquistinretepa.it/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Mercado Público España",
-        "url": "https://contrataciondelestado.es/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
     {
         "name": "Plataforma de Contratación del Sector Público",
         "url": "https://contrataciondelestado.es/",
         "region": "Europa",
         "mode": "portal",
     },
-
-    {
-        "name": "e-Procurement Greece",
-        "url": "https://portal.eprocurement.gov.gr/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Bulgaria",
-        "url": "https://app.eop.bg/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Romania",
-        "url": "https://www.e-licitatie.ro/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Croatia",
-        "url": "https://eojn.nn.hr/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Slovenia",
-        "url": "https://www.enarocanje.si/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Poland",
-        "url": "https://ezamowienia.gov.pl/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Czech Republic",
-        "url": "https://nen.nipez.cz/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Slovakia",
-        "url": "https://www.uvo.gov.sk/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Hungary",
-        "url": "https://ekr.gov.hu/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Lithuania",
-        "url": "https://viesiejipirkimai.lt/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Latvia",
-        "url": "https://www.eis.gov.lv/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
-    {
-        "name": "Public Procurement Estonia",
-        "url": "https://riigihanked.riik.ee/",
-        "region": "Europa",
-        "mode": "portal",
-    },
-
     {
         "name": "UN Global Marketplace",
         "url": "https://www.ungm.org/",
@@ -236,14 +106,10 @@ app = FastAPI(title="Arqueologia Radar")
 
 
 # ============================================================
-# TEXTO / CODIFICAÇÃO
+# CORREÇÃO DE TEXTO
 # ============================================================
 
 def mojibake_score(text: str) -> int:
-    """
-    Quanto maior o valor, maior a probabilidade de o texto
-    estar com problemas de codificação.
-    """
     suspicious = [
         "Ã",
         "Â",
@@ -253,13 +119,14 @@ def mojibake_score(text: str) -> int:
         "�",
     ]
 
-    return sum(text.count(x) for x in suspicious)
+    return sum(
+        text.count(x)
+        for x in suspicious
+    )
 
 
 def repair_text(value: Any) -> str:
-    """
-    Corrige casos de UTF-8 interpretado como Latin-1/CP1252.
-    """
+
     if value is None:
         return ""
 
@@ -282,12 +149,20 @@ def repair_text(value: Any) -> str:
     best = text
 
     for _ in range(4):
+
         candidates = [best]
 
         for encoding in ("latin1", "cp1252"):
+
             try:
-                candidate = best.encode(encoding).decode("utf-8")
+                candidate = (
+                    best
+                    .encode(encoding)
+                    .decode("utf-8")
+                )
+
                 candidates.append(candidate)
+
             except Exception:
                 pass
 
@@ -305,22 +180,28 @@ def repair_text(value: Any) -> str:
 
 
 def flatten_values(value: Any) -> list[str]:
-    """
-    Converte estruturas TED em uma lista simples de valores.
-    """
+
     result = []
 
     if value is None:
         return result
 
     if isinstance(value, list):
+
         for item in value:
-            result.extend(flatten_values(item))
+            result.extend(
+                flatten_values(item)
+            )
+
         return result
 
     if isinstance(value, dict):
+
         for item in value.values():
-            result.extend(flatten_values(item))
+            result.extend(
+                flatten_values(item)
+            )
+
         return result
 
     text = repair_text(value)
@@ -336,6 +217,7 @@ def flatten_values(value: Any) -> list[str]:
 # ============================================================
 
 def parse_date(value: Any) -> date | None:
+
     if value is None:
         return None
 
@@ -344,7 +226,6 @@ def parse_date(value: Any) -> date | None:
     if not text:
         return None
 
-    # Remove horas quando aparecem
     text = text.split("T")[0]
     text = text.split(" ")[0]
 
@@ -356,71 +237,84 @@ def parse_date(value: Any) -> date | None:
     ]
 
     for pattern in patterns:
+
         try:
             return datetime.strptime(
                 text,
                 pattern
             ).date()
+
         except ValueError:
             pass
 
-    # Procurar uma data no meio de texto
     match = re.search(
         r"(\d{4})[-/](\d{2})[-/](\d{2})",
         text
     )
 
     if match:
+
         try:
             return date(
                 int(match.group(1)),
                 int(match.group(2)),
                 int(match.group(3)),
             )
+
         except ValueError:
             pass
 
     return None
 
 
-def parse_deadline_values(notice: dict) -> tuple[date | None, str]:
-    """
-    Procura o prazo em vários campos TED.
-    """
+# ============================================================
+# PRAZOS TED
+# ============================================================
+
+def parse_deadline_values(
+    notice: dict
+) -> tuple[date | None, str]:
 
     fields = [
         "deadline-receipt-tender-date-lot",
         "deadline-receipt-tender-time-lot",
         "deadline-receipt-request-date-lot",
         "deadline-receipt-expressions-date-lot",
-        "deadline-receipt-tender-date",
-        "deadline-receipt-tender-time",
-        "deadline-receipt-request-date",
-        "deadline-receipt-expressions-date",
     ]
 
     candidates = []
 
     for field in fields:
+
         if field not in notice:
             continue
 
-        for value in flatten_values(notice.get(field)):
+        for value in flatten_values(
+            notice.get(field)
+        ):
             candidates.append(value)
 
     deadline_date = None
 
     for value in candidates:
+
         parsed = parse_date(value)
 
         if parsed is None:
             continue
 
-        if deadline_date is None or parsed > deadline_date:
+        if (
+            deadline_date is None
+            or parsed > deadline_date
+        ):
             deadline_date = parsed
 
     if deadline_date:
-        return deadline_date, deadline_date.isoformat()
+
+        return (
+            deadline_date,
+            deadline_date.isoformat()
+        )
 
     return None, ""
 
@@ -429,11 +323,9 @@ def parse_deadline_values(notice: dict) -> tuple[date | None, str]:
 # TEXTO PREFERENCIAL
 # ============================================================
 
-def extract_preferred_text(value: Any) -> str:
-    """
-    Escolhe texto legível quando o TED fornece versões
-    multilingues.
-    """
+def extract_preferred_text(
+    value: Any
+) -> str:
 
     if value is None:
         return ""
@@ -442,10 +334,14 @@ def extract_preferred_text(value: Any) -> str:
         return repair_text(value)
 
     if isinstance(value, list):
+
         values = []
 
         for item in value:
-            text = extract_preferred_text(item)
+
+            text = extract_preferred_text(
+                item
+            )
 
             if text:
                 values.append(text)
@@ -453,8 +349,8 @@ def extract_preferred_text(value: Any) -> str:
         if not values:
             return ""
 
-        # Preferir português / inglês
         for text in values:
+
             low = text.lower()
 
             if any(
@@ -465,7 +361,7 @@ def extract_preferred_text(value: Any) -> str:
                     "arqueolog",
                     "heritage",
                     "patrimoine",
-                    "archäologie",
+                    "kulturerbe",
                 ]
             ):
                 return text
@@ -474,17 +370,18 @@ def extract_preferred_text(value: Any) -> str:
 
     if isinstance(value, dict):
 
-        # Estruturas do tipo {"eng": "...", "por": "..."}
-        preferred_keys = [
+        for key in [
             "eng",
             "por",
             "pt",
             "en",
-        ]
+        ]:
 
-        for key in preferred_keys:
             if key in value:
-                text = extract_preferred_text(value[key])
+
+                text = extract_preferred_text(
+                    value[key]
+                )
 
                 if text:
                     return text
@@ -492,18 +389,25 @@ def extract_preferred_text(value: Any) -> str:
         values = []
 
         for item in value.values():
-            text = extract_preferred_text(item)
+
+            text = extract_preferred_text(
+                item
+            )
 
             if text:
                 values.append(text)
 
-        return values[0] if values else ""
+        return (
+            values[0]
+            if values
+            else ""
+        )
 
     return repair_text(value)
 
 
 # ============================================================
-# RELEVÂNCIA
+# TERMOS
 # ============================================================
 
 ARCHAEOLOGY_TERMS = [
@@ -550,42 +454,42 @@ INFRASTRUCTURE_TERMS = [
     "water",
     "infrastructure",
     "construction works",
-    "construção",
-    "infraestrutura",
 ]
 
 
-def classify(title: str, cpv: str) -> str:
+# ============================================================
+# CLASSIFICAÇÃO
+# ============================================================
+
+def classify(
+    title: str,
+    cpv: str
+) -> str:
+
     text = (
         f"{title} {cpv}"
     ).lower()
 
-    direct = any(
+    if any(
         term in text
         for term in ARCHAEOLOGY_TERMS
-    )
-
-    heritage = any(
-        term in text
-        for term in HERITAGE_TERMS
-    )
-
-    infrastructure = any(
-        term in text
-        for term in INFRASTRUCTURE_TERMS
-    )
-
-    if direct:
+    ):
         return "Arqueologia direta"
 
-    if heritage:
+    if any(
+        term in text
+        for term in HERITAGE_TERMS
+    ):
         return "Património cultural"
 
-    if infrastructure:
-        return "Grande projeto / potencial subcontratação"
+    return (
+        "Grande projeto / potencial subcontratação"
+    )
 
-    return "Grande projeto / potencial subcontratação"
 
+# ============================================================
+# SCORE
+# ============================================================
 
 def calculate_score(
     title: str,
@@ -594,11 +498,12 @@ def calculate_score(
     deadline_date: date | None,
 ) -> int:
 
-    text = f"{title} {cpv}".lower()
+    text = (
+        f"{title} {cpv}"
+    ).lower()
 
     score = 30
 
-    # Arqueologia explícita
     if any(
         term in text
         for term in [
@@ -609,7 +514,6 @@ def calculate_score(
     ):
         score += 30
 
-    # Escavação / acompanhamento
     if any(
         term in text
         for term in [
@@ -622,24 +526,23 @@ def calculate_score(
     ):
         score += 15
 
-    # CPV de arqueologia
     if "71351914" in cpv:
         score += 15
 
-    # Património
     if category == "Património cultural":
         score += 5
 
-    # Prazo futuro
-    if deadline_date:
-        if deadline_date >= TODAY:
-            score += 5
+    if (
+        deadline_date
+        and deadline_date >= TODAY
+    ):
+        score += 5
 
     return min(score, 100)
 
 
 # ============================================================
-# TED
+# CAMPOS TED
 # ============================================================
 
 TED_FIELDS = [
@@ -656,27 +559,35 @@ TED_FIELDS = [
     "deadline-receipt-tender-time-lot",
     "deadline-receipt-request-date-lot",
     "deadline-receipt-expressions-date-lot",
-
-    "deadline-receipt-tender-date",
-    "deadline-receipt-tender-time",
-    "deadline-receipt-request-date",
-    "deadline-receipt-expressions-date",
 ]
 
 
-def search_ted(query: str) -> tuple[list[dict], dict]:
+# ============================================================
+# PESQUISA TED
+# ============================================================
+
+def search_ted(
+    query: str
+) -> tuple[list[dict], dict]:
 
     payload = {
         "query": f'FT~("{query}")',
+
         "fields": TED_FIELDS,
+
         "page": 1,
+
         "limit": 100,
+
         "scope": "ACTIVE",
+
         "checkQuerySyntax": True,
-        "paginationMode": "ITERATION",
+
+        "paginationMode": "PAGE_NUMBER",
     }
 
     try:
+
         response = requests.post(
             TED_URL,
             json=payload,
@@ -700,7 +611,10 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
             "error": str(exc),
         }
 
-    notices = data.get("notices", [])
+    notices = data.get(
+        "notices",
+        []
+    )
 
     total = data.get(
         "totalNoticeCount",
@@ -723,29 +637,40 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
             notice.get("buyer-country")
         )
 
-        publication_number = extract_preferred_text(
-            notice.get("publication-number")
+        publication_number = (
+            extract_preferred_text(
+                notice.get(
+                    "publication-number"
+                )
+            )
         )
 
-        procedure_id = extract_preferred_text(
-            notice.get("procedure-identifier")
+        procedure_id = (
+            extract_preferred_text(
+                notice.get(
+                    "procedure-identifier"
+                )
+            )
         )
 
-        notice_type = extract_preferred_text(
-            notice.get("notice-type")
+        notice_type = (
+            extract_preferred_text(
+                notice.get("notice-type")
+            )
         )
 
         publication_date = None
 
-        publication_values = flatten_values(
+        for value in flatten_values(
             notice.get("publication-date")
-        )
+        ):
 
-        for value in publication_values:
             parsed = parse_date(value)
 
             if parsed:
+
                 publication_date = parsed
+
                 break
 
         cpv_values = flatten_values(
@@ -756,12 +681,14 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
             dict.fromkeys(cpv_values)
         )
 
-        deadline_date, deadline_text = parse_deadline_values(
-            notice
+        deadline_date, deadline_text = (
+            parse_deadline_values(
+                notice
+            )
         )
 
         # ----------------------------------------------------
-        # FILTRO DE DATA
+        # DATA
         # ----------------------------------------------------
 
         recent_enough = (
@@ -774,10 +701,10 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
             and deadline_date >= TODAY
         )
 
-        # Mantemos:
-        # 1. avisos publicados nos últimos 365 dias;
-        # 2. avisos antigos que tenham prazo futuro.
-        if not recent_enough and not still_active:
+        if (
+            not recent_enough
+            and not still_active
+        ):
             continue
 
         # ----------------------------------------------------
@@ -824,6 +751,10 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
         else:
             status = "Prazo não identificado"
 
+        # ----------------------------------------------------
+        # SCORE
+        # ----------------------------------------------------
+
         score = calculate_score(
             title,
             cpv,
@@ -831,56 +762,106 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
             deadline_date,
         )
 
-        # URL TED
+        # ----------------------------------------------------
+        # URL
+        # ----------------------------------------------------
+
         if publication_number:
+
             url = (
-                "https://ted.europa.eu/en/notice/-/detail/"
+                "https://ted.europa.eu/en/notice/"
+                "-/detail/"
                 + publication_number
             )
+
         else:
-            url = "https://ted.europa.eu/"
+
+            url = (
+                "https://ted.europa.eu/"
+            )
 
         results.append({
-            "title": repair_text(title),
+
+            "title": repair_text(
+                title
+            ),
+
             "source": "TED",
+
             "date": (
                 publication_date.isoformat()
                 if publication_date
                 else ""
             ),
+
             "publication_date": (
                 publication_date.isoformat()
                 if publication_date
                 else ""
             ),
+
             "deadline": deadline_text,
+
             "deadline_date": deadline_text,
+
             "status": status,
-            "country": repair_text(country),
-            "buyer": repair_text(buyer),
-            "cpv": repair_text(cpv),
-            "notice_type": repair_text(notice_type),
+
+            "country": repair_text(
+                country
+            ),
+
+            "buyer": repair_text(
+                buyer
+            ),
+
+            "cpv": repair_text(
+                cpv
+            ),
+
+            "notice_type": repair_text(
+                notice_type
+            ),
+
             "publication_number": repair_text(
                 publication_number
             ),
+
             "procedure_id": repair_text(
                 procedure_id
             ),
+
             "category": category,
+
             "score": score,
+
             "url": url,
         })
 
     diagnostics = {
+
         "source": "TED",
+
         "ok": True,
+
         "count": len(results),
+
         "total": total,
+
         "query": payload["query"],
+
         "period_days": RESULTS_DAYS,
-        "cutoff_date": CUTOFF_DATE.isoformat(),
-        "today": TODAY.isoformat(),
-        "searched_at": TODAY.isoformat(),
+
+        "cutoff_date": (
+            CUTOFF_DATE.isoformat()
+        ),
+
+        "today": (
+            TODAY.isoformat()
+        ),
+
+        "searched_at": (
+            TODAY.isoformat()
+        ),
     }
 
     return results, diagnostics
@@ -890,38 +871,54 @@ def search_ted(query: str) -> tuple[list[dict], dict]:
 # DEDUPLICAÇÃO
 # ============================================================
 
-def deduplicate(results: list[dict]) -> list[dict]:
+def deduplicate(
+    results: list[dict]
+) -> list[dict]:
 
     seen = set()
+
     output = []
 
     for item in results:
 
-        key = None
-
         if item.get("procedure_id"):
+
             key = (
                 "procedure",
                 item["procedure_id"]
             )
 
-        elif item.get("publication_number"):
+        elif item.get(
+            "publication_number"
+        ):
+
             key = (
                 "publication",
-                item["publication_number"]
+                item[
+                    "publication_number"
+                ]
             )
 
         else:
+
             key = (
                 "text",
-                item.get("title", "").lower(),
-                item.get("buyer", "").lower(),
+                item.get(
+                    "title",
+                    ""
+                ).lower(),
+
+                item.get(
+                    "buyer",
+                    ""
+                ).lower(),
             )
 
         if key in seen:
             continue
 
         seen.add(key)
+
         output.append(item)
 
     return output
@@ -931,28 +928,37 @@ def deduplicate(results: list[dict]) -> list[dict]:
 # ORDENAÇÃO
 # ============================================================
 
-def sort_results(results: list[dict]) -> list[dict]:
+def sort_results(
+    results: list[dict]
+) -> list[dict]:
 
     def key(item):
 
         deadline = parse_date(
-            item.get("deadline_date")
+            item.get(
+                "deadline_date"
+            )
         )
 
         publication = parse_date(
-            item.get("publication_date")
+            item.get(
+                "publication_date"
+            )
         )
 
-        # 0 = prazo aberto
-        if deadline and deadline >= TODAY:
+        if (
+            deadline
+            and deadline >= TODAY
+        ):
+
             status_order = 0
 
-        # 1 = prazo não identificado
         elif not deadline:
+
             status_order = 1
 
-        # 2 = terminado
         else:
+
             status_order = 2
 
         deadline_sort = (
@@ -971,7 +977,12 @@ def sort_results(results: list[dict]) -> list[dict]:
             status_order,
             deadline_sort,
             -publication_sort.toordinal(),
-            -int(item.get("score", 0)),
+            -int(
+                item.get(
+                    "score",
+                    0
+                )
+            ),
         )
 
     return sorted(
@@ -993,20 +1004,25 @@ def api_search(
     category: str = "",
 ):
 
-    query = q.strip() or "archaeology"
+    query = (
+        q.strip()
+        or "archaeology"
+    )
 
-    ted_results, ted_diag = search_ted(
-        query
+    ted_results, ted_diag = (
+        search_ted(query)
     )
 
     results = ted_results
 
-    # Filtro adicional de categoria
     if category:
+
         results = [
             item
             for item in results
-            if item.get("category") == category
+            if item.get(
+                "category"
+            ) == category
         ]
 
     results = deduplicate(
@@ -1018,13 +1034,22 @@ def api_search(
     )
 
     return JSONResponse({
+
         "results": results,
+
         "diagnostics": [
             ted_diag
         ],
-        "portal_count": len(SOURCES),
+
+        "portal_count": len(
+            SOURCES
+        ),
+
         "api_count": 1,
-        "searched_at": TODAY.isoformat(),
+
+        "searched_at": (
+            TODAY.isoformat()
+        ),
     })
 
 
@@ -1052,12 +1077,14 @@ def health():
         "sources": len(SOURCES),
         "api_sources": 1,
         "today": TODAY.isoformat(),
-        "cutoff_date": CUTOFF_DATE.isoformat(),
+        "cutoff_date": (
+            CUTOFF_DATE.isoformat()
+        ),
     }
 
 
 # ============================================================
-# FICHEIROS ESTÁTICOS
+# FICHEIROS
 # ============================================================
 
 @app.get("/")
@@ -1073,7 +1100,9 @@ def javascript():
 
     return FileResponse(
         ROOT / "app.js",
-        media_type="application/javascript",
+        media_type=(
+            "application/javascript"
+        ),
     )
 
 
@@ -1082,5 +1111,7 @@ def manifest():
 
     return FileResponse(
         ROOT / "manifest.json",
-        media_type="application/manifest+json",
+        media_type=(
+            "application/manifest+json"
+        ),
     )
