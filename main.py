@@ -20,7 +20,6 @@ TED_FIELDS = [
     "buyer-country",
     "classification-cpv",
     "notice-type",
-    "procedure-identifier",
 ]
 
 
@@ -28,13 +27,13 @@ TED_FIELDS = [
 def search():
 
     payload = {
-        "query": 'FT~("archaeology")',
+        "query": 'archaeology',
         "fields": TED_FIELDS,
         "page": 1,
-        "limit": 100,
-        "scope": "ACTIVE",
+        "limit": 10,
+        "scope": "ALL",
         "checkQuerySyntax": True,
-        "paginationMode": "ITERATION",
+        "paginationMode": "PAGE_NUMBER",
     }
 
     try:
@@ -50,9 +49,7 @@ def search():
         return JSONResponse({
             "http_status": response.status_code,
             "response_keys": list(data.keys()),
-            "totalNoticeCount": data.get(
-                "totalNoticeCount"
-            ),
+            "totalNoticeCount": data.get("totalNoticeCount"),
             "notices_count": len(
                 data.get("notices", [])
             ),
@@ -61,6 +58,7 @@ def search():
                 if data.get("notices")
                 else None
             ),
+            "timedOut": data.get("timedOut"),
             "error": data.get("error"),
         })
 
