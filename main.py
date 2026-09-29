@@ -27,7 +27,7 @@ TED_FIELDS = [
 def search():
 
     payload = {
-        "query": 'archaeology',
+        "query": 'FT~("archaeology")',
         "fields": TED_FIELDS,
         "page": 1,
         "limit": 10,
