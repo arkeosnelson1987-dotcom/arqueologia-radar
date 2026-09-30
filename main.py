@@ -685,25 +685,8 @@ def world_bank_title(value):
     if not text:
         return ""
 
-    # Alguns anúncios começam por expressões administrativas.
-    # Tentamos encontrar um título útil.
-    prefixes_to_remove = [
-        "request for expressions of interest",
-        "request for expression of interest",
-        "invitation for bids",
-        "invitation to bid",
-        "request for bids",
-        "procurement notice",
-        "consultancy services",
-    ]
-
-    # Não eliminamos estas expressões automaticamente:
-    # elas podem fazer parte do título real.
-    # Apenas procuramos limitar o tamanho.
-
     if len(text) > 220:
 
-        # Procurar primeiro ponto
         match = re.search(
             r"^(.{40,220}?)(?:\.\s+|\n|$)",
             text
@@ -999,8 +982,11 @@ def build_ted_query(term):
         "%Y%m%d"
     )
 
+    # IMPORTANTE:
+    # Pesquisa no texto completo do anúncio TED.
+    # Esta versão é a que estava a devolver resultados.
     return (
-        f'notice-title~("{term}") '
+        f'FT~"{term}" '
         f'AND publication-date>={cutoff} '
         f'SORT BY publication-date DESC'
     )
@@ -1371,8 +1357,6 @@ def world_bank_notice_to_result(
     # TÍTULO
     # --------------------------------------------------------
 
-    # Primeiro tentamos campos que normalmente contêm
-    # títulos reais.
     title = clean_text(
         notice.get("title")
         or notice.get("notice_title")
@@ -1380,9 +1364,6 @@ def world_bank_notice_to_result(
         or notice.get("bid_description")
     )
 
-    # Só usamos notice_text como recurso secundário.
-    # No World Bank este campo pode conter TODO o anúncio,
-    # incluindo 100/100, HTML, descrição, requisitos, etc.
     if not title:
 
         title = world_bank_title(
@@ -1394,8 +1375,6 @@ def world_bank_notice_to_result(
     if not title:
         return None
 
-    # Segurança adicional:
-    # nunca deixar um score como título.
     title = re.sub(
         r"^\s*\d{1,3}\s*/\s*100\s*",
         "",
@@ -1416,7 +1395,6 @@ def world_bank_notice_to_result(
         or ""
     )
 
-    # Remove score do início da descrição
     description = re.sub(
         r"^\s*\d{1,3}\s*/\s*100\s*",
         "",
@@ -1639,9 +1617,6 @@ def world_bank_notice_to_result(
             if publication:
                 break
 
-    # Não utilizar o prazo como data de publicação.
-    # Se não existir data de publicação, usamos a data atual
-    # apenas para evitar que o resultado seja descartado.
     if not publication:
 
         publication = today_utc()
@@ -1680,8 +1655,6 @@ def world_bank_notice_to_result(
 
             deadline = candidate
 
-    # IMPORTANTE:
-    # se o prazo já terminou, não mostrar o concurso.
     if deadline and deadline < today_utc():
         return None
 
