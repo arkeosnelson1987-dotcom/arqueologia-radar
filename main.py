@@ -8,6 +8,7 @@ import re
 import requests
 import unicodedata
 
+
 # ============================================================
 # CONFIGURAÇÃO
 # ============================================================
@@ -16,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
@@ -44,6 +45,7 @@ TED_FIELDS = [
     "deadline",
 ]
 
+
 # ============================================================
 # TERMOS DE PESQUISA
 # ============================================================
@@ -61,11 +63,13 @@ DEFAULT_TERMS = [
     "patrimonio cultural",
 ]
 
+
 # ============================================================
 # REGIÕES
 # ============================================================
 
 REGIONS = {
+
     "Europa": {
         "AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK",
         "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL",
@@ -109,6 +113,7 @@ REGIONS = {
     }
 }
 
+
 # ============================================================
 # UTILITÁRIOS
 # ============================================================
@@ -121,19 +126,76 @@ def cutoff_date():
     return today_utc() - timedelta(days=PERIOD_DAYS)
 
 
+def strip_html(value):
+    """
+    Remove HTML dos textos devolvidos pelos portais.
+    """
+
+    if value is None:
+        return ""
+
+    text = str(value)
+
+    text = html.unescape(text)
+
+    text = re.sub(
+        r"(?i)<br\s*/?>",
+        "\n",
+        text
+    )
+
+    text = re.sub(
+        r"(?i)</p\s*>",
+        "\n",
+        text
+    )
+
+    text = re.sub(
+        r"(?i)</li\s*>",
+        "\n",
+        text
+    )
+
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"\n\s*\n+",
+        "\n",
+        text
+    )
+
+    return text.strip()
+
+
 def clean_text(value):
+
     if value is None:
         return ""
 
     if isinstance(value, str):
+
+        text = strip_html(value)
+
         return fix_mojibake(
-            html.unescape(value)
+            text
         ).strip()
 
     if isinstance(value, list):
+
         parts = []
 
         for item in value:
+
             txt = clean_text(item)
 
             if txt:
@@ -220,6 +282,7 @@ def fix_mojibake(value):
     }
 
     for old, new in replacements.items():
+
         text = text.replace(
             old,
             new
@@ -241,15 +304,18 @@ def fix_mojibake(value):
             UnicodeEncodeError,
             UnicodeDecodeError
         ):
+
             break
 
         if (
             mojibake_score(candidate)
             < mojibake_score(before)
         ):
+
             text = candidate
 
         else:
+
             break
 
     return html.unescape(text)
@@ -542,7 +608,6 @@ def extract_country(value):
 
     text = str(value).strip()
 
-    # ISO 3
     if re.fullmatch(
         r"[A-Za-z]{3}",
         text
@@ -573,6 +638,93 @@ def normalise_search_term(term):
     )
 
     return term[:120]
+
+
+# ============================================================
+# TÍTULOS WORLD BANK
+# ============================================================
+
+def world_bank_title(value):
+    """
+    Obtém um título curto e limpo a partir do texto
+    devolvido pelo World Bank.
+
+    Alguns registos do World Bank não apresentam um
+    campo de título separado e devolvem o anúncio inteiro
+    em notice_text.
+    """
+
+    text = strip_html(value)
+
+    if not text:
+        return ""
+
+    # Remove scores do tipo 100/100
+    text = re.sub(
+        r"^\s*\d{1,3}\s*/\s*100\s*",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # Remove eventualmente scores repetidos
+    text = re.sub(
+        r"\b\d{1,3}\s*/\s*100\b",
+        "",
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # Normaliza espaços
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    if not text:
+        return ""
+
+    # Alguns anúncios começam por expressões administrativas.
+    # Tentamos encontrar um título útil.
+    prefixes_to_remove = [
+        "request for expressions of interest",
+        "request for expression of interest",
+        "invitation for bids",
+        "invitation to bid",
+        "request for bids",
+        "procurement notice",
+        "consultancy services",
+    ]
+
+    # Não eliminamos estas expressões automaticamente:
+    # elas podem fazer parte do título real.
+    # Apenas procuramos limitar o tamanho.
+
+    if len(text) > 220:
+
+        # Procurar primeiro ponto
+        match = re.search(
+            r"^(.{40,220}?)(?:\.\s+|\n|$)",
+            text
+        )
+
+        if match:
+
+            candidate = match.group(1).strip()
+
+            if len(candidate) >= 40:
+                text = candidate
+
+        else:
+
+            text = (
+                text[:220]
+                .rsplit(" ", 1)[0]
+                .strip()
+            )
+
+    return text
 
 
 # ============================================================
@@ -785,17 +937,21 @@ def calculate_score(
     )
 
     if category == "Arqueologia direta":
+
         score += 25
 
     elif category == "Património cultural":
+
         score += 10
 
     else:
+
         score += 5
 
     if construction and (
         direct or heritage
     ):
+
         score += 10
 
     noise = sum(
@@ -816,12 +972,15 @@ def calculate_score(
         ).days
 
         if days_left >= 30:
+
             score += 5
 
         elif days_left >= 7:
+
             score += 3
 
         elif days_left >= 0:
+
             score += 1
 
     return max(
@@ -934,6 +1093,7 @@ def search_ted_term(term):
             page_notices,
             list
         ):
+
             page_notices = []
 
         notices.extend(
@@ -963,16 +1123,6 @@ def search_ted_term(term):
 
 def search_world_bank(term):
 
-    """
-    Pesquisa avisos de procurement do World Bank.
-
-    A API v2 devolve um envelope com:
-        procnotices
-        total
-        rows
-        os
-    """
-
     try:
 
         params = {
@@ -1001,12 +1151,11 @@ def search_world_bank(term):
             []
         )
 
-        # Algumas respostas podem vir como dicionário
-        # indexado pelo ID.
         if isinstance(
             raw_notices,
             dict
         ):
+
             notices = list(
                 raw_notices.values()
             )
@@ -1015,9 +1164,11 @@ def search_world_bank(term):
             raw_notices,
             list
         ):
+
             notices = raw_notices
 
         else:
+
             notices = []
 
         return {
@@ -1200,13 +1351,6 @@ def world_bank_notice_to_result(
     notice
 ):
 
-    """
-    Converte um aviso World Bank para o formato
-    interno utilizado pelo Radar.
-
-    A estrutura do World Bank é diferente da TED.
-    """
-
     if not isinstance(
         notice,
         dict
@@ -1227,17 +1371,58 @@ def world_bank_notice_to_result(
     # TÍTULO
     # --------------------------------------------------------
 
+    # Primeiro tentamos campos que normalmente contêm
+    # títulos reais.
     title = clean_text(
-        notice.get("notice_text")
-        or notice.get("title")
+        notice.get("title")
         or notice.get("notice_title")
-        or notice.get("bid_description")
         or notice.get("display_title")
-        or notice.get("description")
+        or notice.get("bid_description")
     )
+
+    # Só usamos notice_text como recurso secundário.
+    # No World Bank este campo pode conter TODO o anúncio,
+    # incluindo 100/100, HTML, descrição, requisitos, etc.
+    if not title:
+
+        title = world_bank_title(
+            notice.get("notice_text")
+            or notice.get("description")
+            or ""
+        )
 
     if not title:
         return None
+
+    # Segurança adicional:
+    # nunca deixar um score como título.
+    title = re.sub(
+        r"^\s*\d{1,3}\s*/\s*100\s*",
+        "",
+        title,
+        flags=re.IGNORECASE
+    ).strip()
+
+    if not title:
+        return None
+
+    # --------------------------------------------------------
+    # DESCRIÇÃO
+    # --------------------------------------------------------
+
+    description = strip_html(
+        notice.get("notice_text")
+        or notice.get("description")
+        or ""
+    )
+
+    # Remove score do início da descrição
+    description = re.sub(
+        r"^\s*\d{1,3}\s*/\s*100\s*",
+        "",
+        description,
+        flags=re.IGNORECASE
+    ).strip()
 
     # --------------------------------------------------------
     # PAÍS
@@ -1256,8 +1441,6 @@ def world_bank_notice_to_result(
         country_raw
     )
 
-    # Se vier o nome completo do país,
-    # convertemos para ISO quando possível.
     country_name = clean_text(
         notice.get(
             "project_ctry_name"
@@ -1318,8 +1501,6 @@ def world_bank_notice_to_result(
         "France": "FRA",
         "Gabon": "GAB",
         "Gambia": "GMB",
-        "Georgia": "GEO",
-        "Germany": "DEU",
         "Ghana": "GHA",
         "Greece": "GRC",
         "Guatemala": "GTM",
@@ -1434,7 +1615,7 @@ def world_bank_notice_to_result(
         ]
 
     # --------------------------------------------------------
-    # DATAS
+    # DATA DE PUBLICAÇÃO
     # --------------------------------------------------------
 
     publication = None
@@ -1458,30 +1639,13 @@ def world_bank_notice_to_result(
             if publication:
                 break
 
-    # Alguns registos podem não apresentar
-    # explicitamente a data de publicação.
-    # Nesse caso tentamos outras datas.
+    # Não utilizar o prazo como data de publicação.
+    # Se não existir data de publicação, usamos a data atual
+    # apenas para evitar que o resultado seja descartado.
     if not publication:
 
-        for field in [
-            "submission_date",
-            "deadline_date",
-            "effective_date",
-        ]:
-
-            if field in notice:
-
-                publication = parse_date(
-                    notice.get(field)
-                )
-
-                if publication:
-                    break
-
-    if not publication:
         publication = today_utc()
 
-    # Não vamos apresentar avisos muito antigos.
     if publication < cutoff_date():
         return None
 
@@ -1497,22 +1661,29 @@ def world_bank_notice_to_result(
         "bid_submission_date",
         "closing_date",
         "closingdate",
-        "effective_date",
     ]:
 
-        if field in notice:
+        if field not in notice:
+            continue
 
-            candidate = parse_date(
-                notice.get(field)
-            )
+        candidate = parse_date(
+            notice.get(field)
+        )
 
-            if candidate:
+        if not candidate:
+            continue
 
-                if (
-                    candidate >= today_utc()
-                    or deadline is None
-                ):
-                    deadline = candidate
+        if (
+            deadline is None
+            or candidate < deadline
+        ):
+
+            deadline = candidate
+
+    # IMPORTANTE:
+    # se o prazo já terminou, não mostrar o concurso.
+    if deadline and deadline < today_utc():
+        return None
 
     # --------------------------------------------------------
     # TIPO
@@ -1552,12 +1723,6 @@ def world_bank_notice_to_result(
 
     buyer = clean_text(
         notice.get(
-            "project_name"
-        )
-        or notice.get(
-            "project"
-        )
-        or notice.get(
             "agency_name"
         )
         or notice.get(
@@ -1565,6 +1730,12 @@ def world_bank_notice_to_result(
         )
         or notice.get(
             "borrower"
+        )
+        or notice.get(
+            "project_name"
+        )
+        or notice.get(
+            "project"
         )
         or notice.get(
             "project_ctry_name"
@@ -1577,6 +1748,7 @@ def world_bank_notice_to_result(
 
     classification_text = (
         f"{title} "
+        f"{description} "
         f"{sector} "
         f"{notice_type}"
     )
@@ -1594,9 +1766,6 @@ def world_bank_notice_to_result(
         deadline
     )
 
-    # World Bank já devolveu o resultado porque
-    # correspondeu ao termo pesquisado.
-    # Garantimos, contudo, relevância arqueológica.
     text_lower = classification_text.lower()
 
     relevant = any(
@@ -1640,6 +1809,7 @@ def world_bank_notice_to_result(
 
     return {
         "title": title,
+        "description": description,
         "source": "World Bank",
         "date": publication.isoformat(),
         "date_display": publication.strftime(
@@ -1854,10 +2024,6 @@ def search(
     terms = terms[:12]
 
     diagnostics = []
-
-    # ========================================================
-    # RESULTADOS NORMALIZADOS
-    # ========================================================
 
     all_results = []
 
@@ -2088,6 +2254,37 @@ def search(
         results,
         category
     )
+
+    # ========================================================
+    # SEGURANÇA FINAL:
+    # REMOVER PRAZOS JÁ EXPIRADOS
+    # ========================================================
+
+    today = today_utc()
+
+    active_results = []
+
+    for item in results:
+
+        deadline_text = item.get(
+            "deadline_iso",
+            ""
+        )
+
+        if deadline_text:
+
+            deadline = parse_date(
+                deadline_text
+            )
+
+            if deadline and deadline < today:
+                continue
+
+        active_results.append(
+            item
+        )
+
+    results = active_results
 
     # ========================================================
     # ORDENAÇÃO
