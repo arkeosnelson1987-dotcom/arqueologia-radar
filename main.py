@@ -856,7 +856,10 @@ def search(
     diagnostics = []
     all_notices = []
     # Consultas paralelas para manter a aplicação rápida.
-    with ThreadPoolExecutor(
+    with ThreadPoolExecutor(            if result["ok"]:
+                all_notices.extend(
+                    result["notices"]
+                )
         max_workers=min(8, len(terms))
     ) as executor:
         futures = {
@@ -892,6 +895,36 @@ def search(
                 all_notices.extend(
                     result["notices"]
                 )
+    # ========================================================
+    # WORLD BANK
+    # ========================================================
+    for term in terms:
+        try:
+            wb_result = search_world_bank(term)
+
+            diagnostics.append({
+                "source": f"World Bank — {term}",
+                "ok": wb_result["ok"],
+                "count": wb_result["count"],
+                "received": wb_result["count"],
+                "total": wb_result["count"],
+                "error": wb_result.get("error", ""),
+            })
+
+            if wb_result["ok"]:
+                all_notices.extend(
+                    wb_result["notices"]
+                )
+
+        except Exception as exc:
+            diagnostics.append({
+                "source": f"World Bank — {term}",
+                "ok": False,
+                "count": 0,
+                "received": 0,
+                "total": 0,
+                "error": str(exc),
+            })
     # ========================================================
     # DEDUPLICAÇÃO
     # ========================================================
