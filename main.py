@@ -1,8 +1,11 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import html
 import re
 import requests
@@ -17,16 +20,36 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="1.1.0"
+    version="1.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
-WORLD_BANK_URL = "https://search.worldbank.org/api/v2/procnotices"
+
+WORLD_BANK_URL = (
+    "https://search.worldbank.org/api/v2/procnotices"
+)
+
+REQUEST_TIMEOUT = 25
 
 PERIOD_DAYS = 365
+
 PAGE_SIZE = 250
+
 MAX_PAGES_PER_TERM = 4
-REQUEST_TIMEOUT = 25
+
+
+# ============================================================
+# CAMPOS TED
+# ============================================================
 
 TED_FIELDS = [
     "publication-number",
@@ -42,7 +65,7 @@ TED_FIELDS = [
 
 
 # ============================================================
-# TERMOS
+# TERMOS PRINCIPAIS
 # ============================================================
 
 DEFAULT_TERMS = [
@@ -73,49 +96,323 @@ REGIONS = {
         "LTU", "LUX", "LVA", "MCO", "MDA", "MKD",
         "MLT", "MNE", "NLD", "NOR", "POL", "PRT",
         "ROU", "RUS", "SMR", "SRB", "SVK", "SVN",
-        "SWE", "TUR", "UKR", "VAT", "XKX"
+        "SWE", "UKR", "VAT", "XKX"
     },
 
     "África": {
         "DZA", "AGO", "BEN", "BWA", "BFA", "BDI",
-        "CMR", "CPV", "CAF", "TCD", "COM", "COG",
-        "COD", "CIV", "DJI", "EGY", "GNQ", "ERI",
+        "CPV", "CMR", "CAF", "TCD", "COM", "COD",
+        "COG", "CIV", "DJI", "EGY", "GNQ", "ERI",
         "SWZ", "ETH", "GAB", "GMB", "GHA", "GIN",
-        "GNB", "KEN", "LSO", "LBR", "LBY", "MDG",
-        "MWI", "MLI", "MRT", "MUS", "MAR", "MOZ",
-        "NAM", "NER", "NGA", "RWA", "STP", "SEN",
-        "SYC", "SLE", "SOM", "ZAF", "SSD", "SDN",
-        "TZA", "TGO", "TUN", "UGA", "ZMB", "ZWE"
+        "GNB", "GNQ", "KEN", "LSO", "LBR", "LBY",
+        "MDG", "MWI", "MLI", "MRT", "MUS", "MAR",
+        "MOZ", "NAM", "NER", "NGA", "RWA", "STP",
+        "SEN", "SYC", "SLE", "SOM", "ZAF", "SSD",
+        "SDN", "TZA", "TGO", "TUN", "UGA", "ZMB",
+        "ZWE"
     },
 
     "Médio Oriente": {
         "ARE", "BHR", "IRN", "IRQ", "ISR", "JOR",
         "KWT", "LBN", "OMN", "PSE", "QAT", "SAU",
-        "SYR", "YEM"
+        "SYR", "TUR", "YEM"
     },
 
     "Américas": {
-        "ARG", "BOL", "BRA", "CAN", "CHL", "COL",
-        "CRI", "CUB", "DOM", "ECU", "GTM", "GUY",
-        "HND", "HTI", "JAM", "MEX", "NIC", "PAN",
-        "PER", "PRY", "SLV", "SUR", "TTO", "URY",
-        "USA", "VEN"
+        "ARG", "BHS", "BLZ", "BOL", "BRA", "BRB",
+        "CAN", "CHL", "COL", "CRI", "CUB", "DMA",
+        "DOM", "ECU", "GRD", "GTM", "GUY", "HND",
+        "HTI", "JAM", "KNA", "LCA", "MEX", "NIC",
+        "PAN", "PER", "PRY", "SLV", "SUR", "TTO",
+        "URY", "USA", "VEN"
     },
 
     "Ásia-Pacífico": {
         "AFG", "ARM", "AUS", "AZE", "BGD", "BTN",
-        "BRN", "CHN", "FJI", "GEO", "IDN", "IND",
-        "JPN", "KAZ", "KGZ", "KHM", "KIR", "KOR",
-        "LAO", "LKA", "MHL", "MMR", "MNG", "MYS",
-        "NPL", "NZL", "PAK", "PHL", "PLW", "PNG",
-        "PRK", "SLB", "THA", "TJK", "TKM", "TLS",
-        "TON", "TUV", "UZB", "VNM", "VUT", "WSM"
+        "BRN", "KHM", "CHN", "FJI", "GEO", "IDN",
+        "IND", "JPN", "KAZ", "KGZ", "LAO", "LKA",
+        "MDV", "MNG", "MYS", "NPL", "NZL", "PAK",
+        "PHL", "PRK", "KOR", "SGP", "THA", "TJK",
+        "TKM", "TLS", "UZB", "VNM"
     }
 }
 
 
 # ============================================================
-# FUNÇÕES GERAIS
+# MAPA DE PAÍSES
+# ============================================================
+
+COUNTRY_NAMES = {
+
+    "portugal": "PRT",
+    "portugal continental": "PRT",
+
+    "spain": "ESP",
+    "españa": "ESP",
+    "espana": "ESP",
+    "espanha": "ESP",
+
+    "france": "FRA",
+    "frança": "FRA",
+    "franca": "FRA",
+
+    "germany": "DEU",
+    "alemanha": "DEU",
+    "deutschland": "DEU",
+
+    "italy": "ITA",
+    "italia": "ITA",
+
+    "netherlands": "NLD",
+    "países baixos": "NLD",
+    "paises baixos": "NLD",
+
+    "belgium": "BEL",
+    "bélgica": "BEL",
+    "belgica": "BEL",
+
+    "ireland": "IRL",
+    "irlanda": "IRL",
+
+    "united kingdom": "GBR",
+    "reino unido": "GBR",
+
+    "malta": "MLT",
+
+    "greece": "GRC",
+    "grécia": "GRC",
+    "grecia": "GRC",
+
+    "poland": "POL",
+    "polónia": "POL",
+    "polonia": "POL",
+
+    "romania": "ROU",
+    "roménia": "ROU",
+    "romenia": "ROU",
+
+    "croatia": "HRV",
+    "croácia": "HRV",
+    "croacia": "HRV",
+
+    "austria": "AUT",
+    "áustria": "AUT",
+    "austria": "AUT",
+
+    "switzerland": "CHE",
+    "suíça": "CHE",
+    "suica": "CHE",
+
+    "sweden": "SWE",
+    "suécia": "SWE",
+    "suecia": "SWE",
+
+    "norway": "NOR",
+    "noruega": "NOR",
+
+    "denmark": "DNK",
+    "dinamarca": "DNK",
+
+    "finland": "FIN",
+    "finlândia": "FIN",
+    "finlandia": "FIN",
+
+    "iceland": "ISL",
+    "islândia": "ISL",
+    "islandia": "ISL",
+
+    "czech republic": "CZE",
+    "czechia": "CZE",
+    "república checa": "CZE",
+    "republica checa": "CZE",
+
+    "hungary": "HUN",
+    "hungria": "HUN",
+
+    "bulgaria": "BGR",
+    "búlgaro": "BGR",
+    "bulgaro": "BGR",
+
+    "slovakia": "SVK",
+    "eslováquia": "SVK",
+    "eslovaquia": "SVK",
+
+    "slovenia": "SVN",
+    "eslovénia": "SVN",
+    "eslovenia": "SVN",
+
+    "serbia": "SRB",
+    "sérvia": "SRB",
+    "servia": "SRB",
+
+    "north macedonia": "MKD",
+    "macedónia do norte": "MKD",
+    "macedonia do norte": "MKD",
+
+    "albania": "ALB",
+    "albânia": "ALB",
+    "albania": "ALB",
+
+    "bosnia and herzegovina": "BIH",
+    "bósnia e herzegovina": "BIH",
+    "bosnia e herzegovina": "BIH",
+
+    "montenegro": "MNE",
+
+    "moldova": "MDA",
+
+    "ukraine": "UKR",
+    "ucrânia": "UKR",
+    "ucrania": "UKR",
+
+    "russia": "RUS",
+    "rússia": "RUS",
+    "russia": "RUS",
+
+    "morocco": "MAR",
+    "marrocos": "MAR",
+
+    "algeria": "DZA",
+    "argélia": "DZA",
+    "argelia": "DZA",
+
+    "tunisia": "TUN",
+    "tunísia": "TUN",
+    "tunisia": "TUN",
+
+    "egypt": "EGY",
+    "egito": "EGY",
+
+    "libya": "LBY",
+    "líbia": "LBY",
+    "libia": "LBY",
+
+    "senegal": "SEN",
+
+    "ghana": "GHA",
+    "gana": "GHA",
+
+    "nigeria": "NGA",
+    "nigéria": "NGA",
+    "nigeria": "NGA",
+
+    "kenya": "KEN",
+    "quénia": "KEN",
+    "quenia": "KEN",
+
+    "tanzania": "TZA",
+    "tanzânia": "TZA",
+    "tanzania": "TZA",
+
+    "uganda": "UGA",
+
+    "rwanda": "RWA",
+    "ruanda": "RWA",
+
+    "south africa": "ZAF",
+    "áfrica do sul": "ZAF",
+    "africa do sul": "ZAF",
+
+    "mozambique": "MOZ",
+    "moçambique": "MOZ",
+    "mocambique": "MOZ",
+
+    "angola": "AGO",
+
+    "cape verde": "CPV",
+    "cabo verde": "CPV",
+
+    "guinea-bissau": "GNB",
+    "guiné-bissau": "GNB",
+    "guine-bissau": "GNB",
+
+    "sao tome and principe": "STP",
+    "são tomé e príncipe": "STP",
+    "sao tome e principe": "STP",
+
+    "united states": "USA",
+    "united states of america": "USA",
+    "estados unidos": "USA",
+
+    "canada": "CAN",
+    "canadá": "CAN",
+    "canada": "CAN",
+
+    "mexico": "MEX",
+    "méxico": "MEX",
+    "mexico": "MEX",
+
+    "brazil": "BRA",
+    "brasil": "BRA",
+
+    "argentina": "ARG",
+    "chile": "CHL",
+    "colombia": "COL",
+    "colômbia": "COL",
+    "colombia": "COL",
+
+    "peru": "PER",
+    "uruguay": "URY",
+    "uruguai": "URY",
+
+    "venezuela": "VEN",
+
+    "israel": "ISR",
+    "jordania": "JOR",
+    "jordânia": "JOR",
+
+    "saudi arabia": "SAU",
+    "arábia saudita": "SAU",
+    "arabia saudita": "SAU",
+
+    "united arab emirates": "ARE",
+    "emirados árabes unidos": "ARE",
+    "emirados arabes unidos": "ARE",
+
+    "qatar": "QAT",
+    "iraq": "IRQ",
+    "iraque": "IRQ",
+
+    "iran": "IRN",
+    "irão": "IRN",
+    "irao": "IRN",
+
+    "lebanon": "LBN",
+    "líbano": "LBN",
+    "libano": "LBN",
+
+    "jordan": "JOR",
+    "jordânia": "JOR",
+    "jordania": "JOR",
+
+    "turkey": "TUR",
+    "türkiye": "TUR",
+    "turquia": "TUR",
+
+    "india": "IND",
+    "índia": "IND",
+    "india": "IND",
+
+    "china": "CHN",
+    "japan": "JPN",
+    "japão": "JPN",
+    "japao": "JPN",
+
+    "south korea": "KOR",
+    "coreia do sul": "KOR",
+
+    "australia": "AUS",
+    "austrália": "AUS",
+    "australia": "AUS",
+
+    "new zealand": "NZL",
+    "nova zelândia": "NZL",
+    "nova zelandia": "NZL"
+}
+
+
+# ============================================================
+# FUNÇÕES DE TEXTO
 # ============================================================
 
 def today_utc():
@@ -123,7 +420,9 @@ def today_utc():
 
 
 def cutoff_date():
-    return today_utc() - timedelta(days=PERIOD_DAYS)
+    return today_utc() - timedelta(
+        days=PERIOD_DAYS
+    )
 
 
 def strip_html(value):
@@ -132,13 +431,13 @@ def strip_html(value):
 
     value = str(value)
 
+    value = html.unescape(value)
+
     value = re.sub(
         r"<[^>]+>",
         " ",
         value
     )
-
-    value = html.unescape(value)
 
     value = re.sub(
         r"\s+",
@@ -150,232 +449,441 @@ def strip_html(value):
 
 
 def fix_mojibake(value):
-    if not value:
-        return value
+
+    if value is None:
+        return ""
+
+    value = str(value)
 
     replacements = {
         "Ã¡": "á",
-        "Ã ": "à",
-        "Ã£": "ã",
-        "Ã§": "ç",
         "Ã©": "é",
-        "Ãª": "ê",
         "Ã­": "í",
         "Ã³": "ó",
-        "Ã´": "ô",
         "Ãº": "ú",
-        "Ã¼": "ü",
+        "Ã£": "ã",
+        "Ãµ": "õ",
+        "Ã§": "ç",
+        "Ã€": "À",
         "Ã‰": "É",
-        "ÃŠ": "Ê",
         "Ã“": "Ó",
         "Ãš": "Ú",
         "Â": "",
-        "â€“": "–",
-        "â€”": "—",
-        "â€œ": "“",
-        "â€": "”",
-        "â€˜": "‘",
-        "â€™": "’",
-        "â€¦": "…",
     }
 
     for old, new in replacements.items():
-        value = value.replace(old, new)
+        value = value.replace(
+            old,
+            new
+        )
 
     return value
 
 
 def clean_text(value):
-    return fix_mojibake(
-        strip_html(value)
+
+    value = strip_html(value)
+
+    value = fix_mojibake(value)
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value
     )
 
+    return value.strip()
+
+
+def normalise_search_term(value):
+
+    value = clean_text(value)
+
+    value = unicodedata.normalize(
+        "NFKD",
+        value
+    )
+
+    value = "".join(
+        c for c in value
+        if not unicodedata.combining(c)
+    )
+
+    return value.lower().strip()
+
+
+# ============================================================
+# DATAS
+# ============================================================
 
 def parse_date(value):
 
     if not value:
         return None
 
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
     value = str(value).strip()
+
+    value = value[:10]
 
     formats = [
         "%Y-%m-%d",
-        "%Y%m%d",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%d/%m/%Y",
+        "%Y/%m/%d",
+        "%d-%m-%Y",
     ]
 
     for fmt in formats:
+
         try:
             return datetime.strptime(
-                value[:26],
+                value,
                 fmt
             ).date()
+
         except Exception:
             pass
 
-    try:
-        return datetime.fromisoformat(
-            value.replace("Z", "+00:00")
-        ).date()
-    except Exception:
-        return None
+    return None
 
 
 def extract_all_dates(value):
 
-    if not value:
-        return []
-
-    if isinstance(value, list):
-        values = value
-    else:
-        values = [value]
-
-    result = []
-
-    for item in values:
-
-        if isinstance(item, dict):
-            for v in item.values():
-                d = parse_date(v)
-
-                if d:
-                    result.append(d)
-
-        else:
-            d = parse_date(item)
-
-            if d:
-                result.append(d)
-
-    return result
-
-
-def extract_deadline(notice):
-
-    possible_fields = [
-        "deadline",
-        "deadline-date-lot",
-        "deadline_date",
-        "submission_date",
-        "closing_date",
-        "closingdate",
-        "bid_submission_date",
-    ]
-
     dates = []
 
-    for field in possible_fields:
-
-        value = notice.get(field)
-
-        dates.extend(
-            extract_all_dates(value)
-        )
-
-    if not dates:
-        return None
-
-    return min(dates)
-
-
-def extract_cpvs(notice):
-
-    value = notice.get(
-        "classification-cpv"
-    )
-
     if not value:
-        value = notice.get("cpv")
-
-    if not value:
-        return []
+        return dates
 
     if isinstance(value, list):
-        values = value
-    else:
-        values = [value]
 
-    result = []
-
-    for item in values:
-
-        if isinstance(item, dict):
-
-            for v in item.values():
-
-                matches = re.findall(
-                    r"\b\d{8}\b",
-                    str(v)
-                )
-
-                result.extend(matches)
-
-        else:
-
-            matches = re.findall(
-                r"\b\d{8}\b",
-                str(item)
+        for item in value:
+            dates.extend(
+                extract_all_dates(item)
             )
 
-            result.extend(matches)
-
-    return list(
-        dict.fromkeys(result)
-    )
-
-
-def extract_country(value):
-
-    if not value:
-        return ""
-
-    if isinstance(value, list):
-
-        if not value:
-            return ""
-
-        value = value[0]
+        return dates
 
     if isinstance(value, dict):
 
-        for key in [
-            "code",
-            "country-code",
-            "country_code",
-            "value",
-            "name"
-        ]:
+        for item in value.values():
+            dates.extend(
+                extract_all_dates(item)
+            )
 
-            if value.get(key):
-                return str(
-                    value[key]
-                ).strip()
+        return dates
 
-        return ""
+    text = str(value)
 
-    return str(value).strip()
+    patterns = [
+        r"\d{4}-\d{2}-\d{2}",
+        r"\d{2}/\d{2}/\d{4}",
+        r"\d{2}-\d{2}-\d{4}",
+    ]
+
+    for pattern in patterns:
+
+        for match in re.findall(
+            pattern,
+            text
+        ):
+
+            parsed = parse_date(
+                match
+            )
+
+            if parsed:
+                dates.append(parsed)
+
+    return dates
 
 
-def normalise_search_term(term):
+def extract_deadline(data):
 
-    term = clean_text(term)
+    possible_keys = [
+        "deadline",
+        "deadline-date",
+        "deadline-date-lot",
+        "submission_date",
+        "deadline_date",
+        "bid_submission_date",
+        "closing_date",
+        "closingdate",
+    ]
 
-    term = re.sub(
-        r"\s+",
-        " ",
-        term
+    for key in possible_keys:
+
+        if key in data:
+
+            value = data.get(key)
+
+            dates = extract_all_dates(
+                value
+            )
+
+            if dates:
+
+                future_dates = [
+                    d for d in dates
+                    if d >= today_utc()
+                ]
+
+                if future_dates:
+                    return min(
+                        future_dates
+                    ).isoformat()
+
+                return max(
+                    dates
+                ).isoformat()
+
+    return ""
+
+
+# ============================================================
+# CPV
+# ============================================================
+
+def extract_cpvs(data):
+
+    values = []
+
+    for key in [
+        "classification-cpv",
+        "cpv",
+        "cpvs",
+        "classification",
+    ]:
+
+        value = data.get(key)
+
+        if not value:
+            continue
+
+        if isinstance(value, list):
+
+            values.extend(
+                str(x)
+                for x in value
+            )
+
+        elif isinstance(value, dict):
+
+            values.extend(
+                str(x)
+                for x in value.values()
+            )
+
+        else:
+
+            values.append(
+                str(value)
+            )
+
+    text = " ".join(values)
+
+    cpvs = re.findall(
+        r"\b\d{8}\b",
+        text
     )
 
-    return term.strip()
+    return list(
+        dict.fromkeys(cpvs)
+    )
+
+
+# ============================================================
+# PAÍS
+# ============================================================
+
+def extract_country(data):
+
+    for key in [
+        "buyer-country",
+        "country",
+        "buyer_country",
+        "country-code",
+        "country_code",
+    ]:
+
+        value = data.get(key)
+
+        if not value:
+            continue
+
+        if isinstance(value, dict):
+
+            for subkey in [
+                "code",
+                "country",
+                "name",
+                "value",
+            ]:
+
+                if value.get(subkey):
+                    value = value.get(
+                        subkey
+                    )
+                    break
+
+        if isinstance(value, list):
+
+            if value:
+                value = value[0]
+
+        value = clean_text(value)
+
+        if value:
+            return value
+
+    return ""
+
+
+def country_to_iso3(value):
+
+    if not value:
+        return ""
+
+    value = clean_text(
+        value
+    )
+
+    upper = value.upper()
+
+    if re.fullmatch(
+        r"[A-Z]{3}",
+        upper
+    ):
+        return upper
+
+    iso2 = {
+        "PT": "PRT",
+        "ES": "ESP",
+        "FR": "FRA",
+        "DE": "DEU",
+        "IT": "ITA",
+        "BE": "BEL",
+        "NL": "NLD",
+        "IE": "IRL",
+        "GB": "GBR",
+        "MT": "MLT",
+        "GR": "GRC",
+        "PL": "POL",
+        "RO": "ROU",
+        "HR": "HRV",
+        "AT": "AUT",
+        "CH": "CHE",
+        "SE": "SWE",
+        "NO": "NOR",
+        "DK": "DNK",
+        "FI": "FIN",
+        "IS": "ISL",
+        "HU": "HUN",
+        "BG": "BGR",
+        "SK": "SVK",
+        "SI": "SVN",
+        "RS": "SRB",
+        "ME": "MNE",
+        "UA": "UKR",
+        "RU": "RUS",
+
+        "MA": "MAR",
+        "DZ": "DZA",
+        "TN": "TUN",
+        "EG": "EGY",
+        "LY": "LBY",
+        "SN": "SEN",
+        "GH": "GHA",
+        "NG": "NGA",
+        "KE": "KEN",
+        "TZ": "TZA",
+        "UG": "UGA",
+        "RW": "RWA",
+        "ZA": "ZAF",
+        "MZ": "MOZ",
+        "AO": "AGO",
+        "CV": "CPV",
+        "GW": "GNB",
+        "ST": "STP",
+
+        "US": "USA",
+        "CA": "CAN",
+        "MX": "MEX",
+        "BR": "BRA",
+        "AR": "ARG",
+        "CL": "CHL",
+        "CO": "COL",
+        "PE": "PER",
+        "UY": "URY",
+        "VE": "VEN",
+
+        "IL": "ISR",
+        "JO": "JOR",
+        "SA": "SAU",
+        "AE": "ARE",
+        "IQ": "IRQ",
+        "IR": "IRN",
+        "LB": "LBN",
+        "TR": "TUR",
+
+        "IN": "IND",
+        "CN": "CHN",
+        "JP": "JPN",
+        "KR": "KOR",
+        "AU": "AUS",
+        "NZ": "NZL",
+    }
+
+    if upper in iso2:
+        return iso2[upper]
+
+    normalised = normalise_search_term(
+        value
+    )
+
+    return COUNTRY_NAMES.get(
+        normalised,
+        ""
+    )
 
 
 # ============================================================
 # CLASSIFICAÇÃO
 # ============================================================
+
+ARCHAEOLOGY_KEYWORDS = [
+    "archaeology",
+    "archaeological",
+    "archaeologist",
+    "excavation",
+    "excavations",
+    "archaeological monitoring",
+    "archaeological excavation",
+    "archaeological services",
+    "cultural heritage",
+    "heritage",
+    "archaeological heritage",
+    "arqueologia",
+    "arqueológico",
+    "arqueologica",
+    "escavação",
+    "escavacao",
+    "património cultural",
+    "patrimonio cultural",
+]
+
+
+ARCHAEOLOGY_CPVS = {
+    "71351914",
+    "71351720",
+    "71351811",
+    "45112450",
+}
+
 
 def classify_result(
     title,
@@ -383,441 +891,74 @@ def classify_result(
     cpvs=None
 ):
 
-    text = (
-        f"{title} "
-        f"{description}"
-    ).lower()
-
     cpvs = cpvs or []
 
-    archaeology_words = [
-        "archaeolog",
-        "archaeological",
-        "archaeology",
-        "excavation",
-        "excavations",
-        "heritage",
-        "cultural heritage",
-        "archaeological monitoring",
-        "archaeological excavation",
-        "arqueologia",
-        "arqueológico",
-        "arqueológica",
-        "património",
-        "patrimonio",
-    ]
-
-    direct_words = [
-        "archaeological excavation",
-        "archaeological monitoring",
-        "archaeological services",
-        "archaeology",
-        "archaeological",
-        "excavation",
-        "arqueologia",
-        "arqueológico",
-        "arqueológica",
-    ]
+    text = normalise_search_term(
+        f"{title} {description}"
+    )
 
     direct = any(
-        word in text
-        for word in direct_words
+        keyword in text
+        for keyword in [
+            "archaeology",
+            "archaeological",
+            "archaeologist",
+            "excavation",
+            "archaeological monitoring",
+            "archaeological excavation",
+            "archaeological services",
+            "arqueologia",
+            "arqueologico",
+            "arqueologica",
+            "escavacao",
+            "escavacao arqueologica",
+        ]
     )
 
-    relevant = any(
-        word in text
-        for word in archaeology_words
+    heritage = any(
+        keyword in text
+        for keyword in [
+            "cultural heritage",
+            "heritage",
+            "archaeological heritage",
+            "patrimonio cultural",
+        ]
     )
 
-    archaeological_cpvs = {
-        "71351914",
-        "71351720",
-        "71351811",
-        "45112450",
-    }
-
-    has_archaeological_cpv = any(
-        cpv in archaeological_cpvs
+    cpv_match = any(
+        cpv in ARCHAEOLOGY_CPVS
         for cpv in cpvs
     )
 
-    if direct or has_archaeological_cpv:
+    if direct:
+
         category = "Arqueologia direta"
-    elif relevant:
+
+        score = 90
+
+        if cpv_match:
+            score = 95
+
+    elif heritage or cpv_match:
+
         category = "Património / Arqueologia"
+
+        score = 70
+
     else:
+
         category = "Relevante"
 
-    score = 0
+        score = 30
 
-    if direct:
-        score += 60
-
-    if has_archaeological_cpv:
-        score += 30
-
-    if relevant:
-        score += 20
-
-    if "cultural heritage" in text:
-        score += 10
-
-    if "monitoring" in text:
-        score += 10
-
-    if "excavation" in text:
-        score += 10
-
-    score = min(
+    return category, min(
         score,
         100
     )
 
-    return category, score
-
 
 # ============================================================
-# WORLD BANK
-# ============================================================
-
-def world_bank_title(notice):
-
-    title = ""
-
-    for field in [
-        "project_name",
-        "notice_title",
-        "title",
-        "procurement_name",
-        "contract_name",
-    ]:
-
-        value = notice.get(field)
-
-        if value:
-            title = clean_text(value)
-            break
-
-    if not title:
-
-        title = clean_text(
-            notice.get("notice_text", "")
-        )
-
-    title = re.sub(
-        r"^\s*100\s*/\s*100\s*",
-        "",
-        title,
-        flags=re.I
-    )
-
-    title = re.sub(
-        r"^\s*100/100\s*",
-        "",
-        title,
-        flags=re.I
-    )
-
-    return title[:220].strip()
-
-
-def world_bank_notice_to_result(notice):
-
-    title = world_bank_title(
-        notice
-    )
-
-    if not title:
-        return None
-
-    description = clean_text(
-        notice.get(
-            "notice_text",
-            notice.get(
-                "description",
-                ""
-            )
-        )
-    )
-
-    country_raw = (
-        notice.get("country")
-        or notice.get("country_name")
-        or notice.get("country_code")
-        or ""
-    )
-
-    country = extract_country(
-        country_raw
-    )
-
-    country_names = {
-        "Tanzania": "TZA",
-        "United Republic of Tanzania": "TZA",
-        "Mozambique": "MOZ",
-        "Kenya": "KEN",
-        "Ghana": "GHA",
-        "Nigeria": "NGA",
-        "South Africa": "ZAF",
-        "Uganda": "UGA",
-        "Rwanda": "RWA",
-        "Senegal": "SEN",
-        "Morocco": "MAR",
-        "Tunisia": "TUN",
-        "Egypt": "EGY",
-        "Ethiopia": "ETH",
-        "Zambia": "ZMB",
-        "Zimbabwe": "ZWE",
-        "Malawi": "MWI",
-        "Mali": "MLI",
-        "Niger": "NER",
-        "Cameroon": "CMR",
-        "Gabon": "GAB",
-        "Guinea": "GIN",
-        "Sierra Leone": "SLE",
-        "Liberia": "LBR",
-        "Benin": "BEN",
-        "Burkina Faso": "BFA",
-        "Botswana": "BWA",
-        "Namibia": "NAM",
-        "Angola": "AGO",
-        "Algeria": "DZA",
-        "Libya": "LBY",
-        "Mauritius": "MUS",
-        "Madagascar": "MDG",
-        "Sao Tome and Principe": "STP",
-        "São Tomé and Príncipe": "STP",
-    }
-
-    country_code = country
-
-    if country in country_names:
-        country_code = country_names[country]
-
-    if len(country) == 2:
-        iso2 = {
-            "TZ": "TZA",
-            "MZ": "MOZ",
-            "KE": "KEN",
-            "GH": "GHA",
-            "NG": "NGA",
-            "ZA": "ZAF",
-            "UG": "UGA",
-            "RW": "RWA",
-            "SN": "SEN",
-            "MA": "MAR",
-            "TN": "TUN",
-            "EG": "EGY",
-            "ET": "ETH",
-            "ZM": "ZMB",
-            "ZW": "ZWE",
-            "MW": "MWI",
-            "ML": "MLI",
-            "NE": "NER",
-            "CM": "CMR",
-            "GA": "GAB",
-            "GN": "GIN",
-            "SL": "SLE",
-            "LR": "LBR",
-            "BJ": "BEN",
-            "BF": "BFA",
-            "BW": "BWA",
-            "NA": "NAM",
-            "AO": "AGO",
-            "DZ": "DZA",
-            "LY": "LBY",
-            "MU": "MUS",
-            "MG": "MDG",
-            "ST": "STP",
-        }
-
-        country_code = iso2.get(
-            country.upper(),
-            country.upper()
-        )
-
-    publication_date = None
-
-    for field in [
-        "publication_date",
-        "publication-date",
-        "date",
-        "published_date",
-    ]:
-
-        d = parse_date(
-            notice.get(field)
-        )
-
-        if d:
-            publication_date = d
-            break
-
-    if not publication_date:
-        publication_date = today_utc()
-
-    deadline = None
-
-    for field in [
-        "submission_date",
-        "deadline_date",
-        "bid_submission_date",
-        "closing_date",
-        "closingdate",
-    ]:
-
-        d = parse_date(
-            notice.get(field)
-        )
-
-        if d:
-            deadline = d
-            break
-
-    if deadline and deadline < today_utc():
-        return None
-
-    cpvs = extract_cpvs(
-        notice
-    )
-
-    category, score = classify_result(
-        title,
-        description,
-        cpvs
-    )
-
-    url = (
-        notice.get("url")
-        or notice.get("notice_url")
-        or notice.get("procurement_url")
-        or ""
-    )
-
-    buyer = (
-        notice.get("buyer")
-        or notice.get("agency")
-        or notice.get("organization")
-        or notice.get("borrower")
-        or ""
-    )
-
-    return {
-        "title": title,
-        "description": description,
-        "source": "World Bank",
-        "country": country_code,
-        "buyer": clean_text(buyer),
-        "date": publication_date.isoformat(),
-        "deadline": (
-            deadline.isoformat()
-            if deadline
-            else ""
-        ),
-        "category": category,
-        "score": score,
-        "cpv": ", ".join(cpvs),
-        "url": url,
-    }
-
-
-def query_world_bank():
-
-    diagnostics = {
-        "source": "World Bank",
-        "ok": False,
-        "count": 0,
-    }
-
-    results = []
-
-    try:
-
-        response = requests.get(
-            WORLD_BANK_URL,
-            params={
-                "format": "json",
-                "rows": PAGE_SIZE,
-            },
-            timeout=REQUEST_TIMEOUT
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        notices = []
-
-        if isinstance(data, list):
-            notices = data
-
-        elif isinstance(data, dict):
-
-            for key in [
-                "procnotices",
-                "notices",
-                "results",
-                "data",
-            ]:
-
-                value = data.get(key)
-
-                if isinstance(value, list):
-                    notices = value
-                    break
-
-                if isinstance(value, dict):
-
-                    for subkey in [
-                        "notice",
-                        "notices",
-                        "results",
-                        "data",
-                    ]:
-
-                        subvalue = value.get(
-                            subkey
-                        )
-
-                        if isinstance(
-                            subvalue,
-                            list
-                        ):
-                            notices = subvalue
-                            break
-
-                    if notices:
-                        break
-
-        for notice in notices:
-
-            if not isinstance(
-                notice,
-                dict
-            ):
-                continue
-
-            result = world_bank_notice_to_result(
-                notice
-            )
-
-            if result:
-                results.append(result)
-
-        diagnostics["ok"] = True
-        diagnostics["count"] = len(results)
-
-        return results, diagnostics
-
-    except Exception as exc:
-
-        diagnostics["error"] = str(exc)
-
-        return [], diagnostics
-
-
-# ============================================================
-# TED
+# QUERY TED
 # ============================================================
 
 def build_ted_query(term):
@@ -833,19 +974,11 @@ def build_ted_query(term):
     )
 
 
+# ============================================================
+# CONVERTER AVISO TED
+# ============================================================
+
 def notice_to_result(notice):
-
-    publication_date = parse_date(
-        notice.get(
-            "publication-date"
-        )
-    )
-
-    if not publication_date:
-        return None
-
-    if publication_date < cutoff_date():
-        return None
 
     title = clean_text(
         notice.get(
@@ -854,32 +987,20 @@ def notice_to_result(notice):
         )
     )
 
+    if isinstance(
+        notice.get("notice-title"),
+        dict
+    ):
+
+        title = clean_text(
+            notice["notice-title"].get(
+                "text",
+                ""
+            )
+        )
+
     if not title:
         return None
-
-    buyer_country = extract_country(
-        notice.get(
-            "buyer-country"
-        )
-    )
-
-    cpvs = extract_cpvs(
-        notice
-    )
-
-    deadline = extract_deadline(
-        notice
-    )
-
-    if deadline and deadline < today_utc():
-        return None
-
-    buyer = clean_text(
-        notice.get(
-            "buyer-name",
-            ""
-        )
-    )
 
     description = clean_text(
         notice.get(
@@ -888,28 +1009,61 @@ def notice_to_result(notice):
         )
     )
 
+    cpvs = extract_cpvs(
+        notice
+    )
+
+    country = extract_country(
+        notice
+    )
+
+    publication_date = parse_date(
+        notice.get(
+            "publication-date"
+        )
+    )
+
+    if (
+        publication_date
+        and publication_date < cutoff_date()
+    ):
+        return None
+
+    deadline = extract_deadline(
+        notice
+    )
+
+    if deadline:
+
+        deadline_date = parse_date(
+            deadline
+        )
+
+        if (
+            deadline_date
+            and deadline_date < today_utc()
+        ):
+            return None
+
     category, score = classify_result(
         title,
         description,
         cpvs
     )
 
-    title_lower = title.lower()
-    description_lower = description.lower()
+    text = normalise_search_term(
+        f"{title} {description}"
+    )
 
     relevant = (
         any(
-            term.lower() in title_lower
-            or term.lower() in description_lower
+            normalise_search_term(
+                term
+            ) in text
             for term in DEFAULT_TERMS
         )
         or any(
-            cpv in {
-                "71351914",
-                "71351720",
-                "71351811",
-                "45112450",
-            }
+            cpv in ARCHAEOLOGY_CPVS
             for cpv in cpvs
         )
     )
@@ -917,44 +1071,52 @@ def notice_to_result(notice):
     if not relevant:
         return None
 
-    if score < 20:
-        return None
-
-    publication_number = notice.get(
-        "publication-number",
-        ""
+    publication_number = clean_text(
+        notice.get(
+            "publication-number",
+            ""
+        )
     )
 
     url = ""
 
     if publication_number:
+
         url = (
             "https://ted.europa.eu/"
-            f"en/notice/{publication_number}"
+            "en/notice/-/detail/"
+            + publication_number
         )
 
     return {
         "title": title,
         "description": description,
         "source": "TED",
-        "country": buyer_country,
-        "buyer": buyer,
-        "date": publication_date.isoformat(),
-        "deadline": (
-            deadline.isoformat()
-            if deadline
+        "date": (
+            publication_date.isoformat()
+            if publication_date
             else ""
         ),
+        "deadline": deadline,
+        "country": country,
+        "buyer": clean_text(
+            notice.get(
+                "buyer-name",
+                ""
+            )
+        ),
+        "cpv": ", ".join(cpvs),
         "category": category,
         "score": score,
-        "cpv": ", ".join(cpvs),
         "url": url,
     }
 
 
-def query_ted(term):
+# ============================================================
+# TED — POST
+# ============================================================
 
-    def query_ted(term):
+def query_ted(term):
 
     diagnostics = {
         "source": f"TED — {term}",
@@ -966,7 +1128,9 @@ def query_ted(term):
 
     try:
 
-        query = build_ted_query(term)
+        query = build_ted_query(
+            term
+        )
 
         payload = {
             "query": query,
@@ -986,39 +1150,40 @@ def query_ted(term):
 
         data = response.json()
 
-        # ----------------------------------------------------
-        # TED devolve os resultados normalmente em "notices"
-        # ----------------------------------------------------
-
         notices = []
 
-        if isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
 
             if isinstance(
                 data.get("notices"),
                 list
             ):
+
                 notices = data["notices"]
 
             elif isinstance(
                 data.get("results"),
                 list
             ):
+
                 notices = data["results"]
 
             elif isinstance(
                 data.get("data"),
                 list
             ):
+
                 notices = data["data"]
 
-        elif isinstance(data, list):
+        elif isinstance(
+            data,
+            list
+        ):
 
             notices = data
-
-        # ----------------------------------------------------
-        # Converter avisos TED
-        # ----------------------------------------------------
 
         for notice in notices:
 
@@ -1033,24 +1198,358 @@ def query_ted(term):
             )
 
             if result:
+
                 results.append(
                     result
                 )
 
         diagnostics["ok"] = True
-        diagnostics["count"] = len(results)
+
+        diagnostics["count"] = len(
+            results
+        )
 
         return results, diagnostics
 
     except Exception as exc:
 
-        diagnostics["error"] = str(exc)
+        diagnostics["error"] = str(
+            exc
+        )
 
         return [], diagnostics
 
 
 # ============================================================
-# FILTRO DE REGIÃO
+# WORLD BANK
+# ============================================================
+
+def world_bank_title(item):
+
+    possible_keys = [
+        "project_name",
+        "procurement_name",
+        "title",
+        "notice_title",
+        "procurement_title",
+        "contract_title",
+    ]
+
+    for key in possible_keys:
+
+        value = item.get(
+            key
+        )
+
+        if value:
+
+            value = clean_text(
+                value
+            )
+
+            value = re.sub(
+                r"^\s*\d+\s*/\s*100\s*",
+                "",
+                value
+            )
+
+            if value:
+                return value
+
+    return ""
+
+
+def world_bank_description(item):
+
+    possible_keys = [
+        "description",
+        "short_description",
+        "procurement_description",
+        "notice_description",
+        "project_description",
+    ]
+
+    values = []
+
+    for key in possible_keys:
+
+        value = item.get(
+            key
+        )
+
+        if value:
+
+            values.append(
+                clean_text(value)
+            )
+
+    text = " ".join(
+        x for x in values
+        if x
+    )
+
+    text = re.sub(
+        r"^\s*\d+\s*/\s*100\s*",
+        "",
+        text
+    )
+
+    return text.strip()
+
+
+def world_bank_date(item):
+
+    possible_keys = [
+        "publication_date",
+        "notice_date",
+        "date",
+        "published_date",
+        "procurement_date",
+    ]
+
+    for key in possible_keys:
+
+        parsed = parse_date(
+            item.get(key)
+        )
+
+        if parsed:
+            return parsed
+
+    return None
+
+
+def world_bank_url(item):
+
+    for key in [
+        "url",
+        "notice_url",
+        "procurement_url",
+        "link",
+        "notice_link",
+    ]:
+
+        value = item.get(
+            key
+        )
+
+        if value:
+            return str(value)
+
+    return ""
+
+
+def query_world_bank(term):
+
+    diagnostics = {
+        "source": f"World Bank — {term}",
+        "ok": False,
+        "count": 0,
+    }
+
+    results = []
+
+    try:
+
+        params = {
+            "qterm": term,
+            "format": "json",
+            "rows": PAGE_SIZE,
+        }
+
+        response = requests.get(
+            WORLD_BANK_URL,
+            params=params,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        records = []
+
+        if isinstance(
+            data,
+            dict
+        ):
+
+            for key in [
+                "procnotices",
+                "results",
+                "data",
+                "records",
+            ]:
+
+                value = data.get(
+                    key
+                )
+
+                if isinstance(
+                    value,
+                    list
+                ):
+
+                    records = value
+                    break
+
+                if isinstance(
+                    value,
+                    dict
+                ):
+
+                    for subkey in [
+                        "rows",
+                        "results",
+                        "data",
+                    ]:
+
+                        if isinstance(
+                            value.get(subkey),
+                            list
+                        ):
+
+                            records = value[
+                                subkey
+                            ]
+
+                            break
+
+                    if records:
+                        break
+
+        elif isinstance(
+            data,
+            list
+        ):
+
+            records = data
+
+        for item in records:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+                continue
+
+            title = world_bank_title(
+                item
+            )
+
+            description = (
+                world_bank_description(
+                    item
+                )
+            )
+
+            if not title:
+                continue
+
+            pub_date = world_bank_date(
+                item
+            )
+
+            if (
+                pub_date
+                and pub_date < cutoff_date()
+            ):
+                continue
+
+            deadline = extract_deadline(
+                item
+            )
+
+            if deadline:
+
+                deadline_date = parse_date(
+                    deadline
+                )
+
+                if (
+                    deadline_date
+                    and deadline_date < today_utc()
+                ):
+                    continue
+
+            country = extract_country(
+                item
+            )
+
+            cpvs = extract_cpvs(
+                item
+            )
+
+            category, score = classify_result(
+                title,
+                description,
+                cpvs
+            )
+
+            text = normalise_search_term(
+                f"{title} {description}"
+            )
+
+            if not any(
+                normalise_search_term(
+                    x
+                ) in text
+                for x in DEFAULT_TERMS
+            ):
+
+                if not any(
+                    cpv in ARCHAEOLOGY_CPVS
+                    for cpv in cpvs
+                ):
+                    continue
+
+            results.append({
+                "title": title,
+                "description": description,
+                "source": "World Bank Procurement",
+                "date": (
+                    pub_date.isoformat()
+                    if pub_date
+                    else ""
+                ),
+                "deadline": deadline,
+                "country": country,
+                "buyer": clean_text(
+                    item.get(
+                        "buyer",
+                        item.get(
+                            "procuring_entity",
+                            ""
+                        )
+                    )
+                ),
+                "cpv": ", ".join(cpvs),
+                "category": category,
+                "score": score,
+                "url": world_bank_url(
+                    item
+                ),
+            })
+
+        diagnostics["ok"] = True
+
+        diagnostics["count"] = len(
+            results
+        )
+
+        return results, diagnostics
+
+    except Exception as exc:
+
+        diagnostics["error"] = str(
+            exc
+        )
+
+        return [], diagnostics
+
+
+# ============================================================
+# FILTRO REGIONAL
 # ============================================================
 
 def apply_region_filter(
@@ -1058,494 +1557,34 @@ def apply_region_filter(
     region
 ):
 
-    region = (
-        region or ""
-    ).strip()
-
     if not region:
         return results
 
-    allowed = REGIONS.get(
-        region
-    )
-
-    if not allowed:
+    if region not in REGIONS:
         return results
 
-    # --------------------------------------------------------
-    # Nomes de países -> ISO3
-    # --------------------------------------------------------
-
-    country_names = {
-
-        # África
-        "Algeria": "DZA",
-        "Angola": "AGO",
-        "Benin": "BEN",
-        "Botswana": "BWA",
-        "Burkina Faso": "BFA",
-        "Burundi": "BDI",
-        "Cameroon": "CMR",
-        "Cape Verde": "CPV",
-        "Cabo Verde": "CPV",
-        "Central African Republic": "CAF",
-        "Chad": "TCD",
-        "Comoros": "COM",
-        "Republic of the Congo": "COG",
-        "Congo": "COG",
-        "Democratic Republic of the Congo": "COD",
-        "Democratic Republic of Congo": "COD",
-        "Côte d'Ivoire": "CIV",
-        "Cote d'Ivoire": "CIV",
-        "Ivory Coast": "CIV",
-        "Djibouti": "DJI",
-        "Egypt": "EGY",
-        "Equatorial Guinea": "GNQ",
-        "Eritrea": "ERI",
-        "Eswatini": "SWZ",
-        "Swaziland": "SWZ",
-        "Ethiopia": "ETH",
-        "Gabon": "GAB",
-        "Gambia": "GMB",
-        "The Gambia": "GMB",
-        "Ghana": "GHA",
-        "Guinea": "GIN",
-        "Guinea-Bissau": "GNB",
-        "Kenya": "KEN",
-        "Lesotho": "LSO",
-        "Liberia": "LBR",
-        "Libya": "LBY",
-        "Madagascar": "MDG",
-        "Malawi": "MWI",
-        "Mali": "MLI",
-        "Mauritania": "MRT",
-        "Mauritius": "MUS",
-        "Morocco": "MAR",
-        "Mozambique": "MOZ",
-        "Namibia": "NAM",
-        "Niger": "NER",
-        "Nigeria": "NGA",
-        "Rwanda": "RWA",
-        "Sao Tome and Principe": "STP",
-        "São Tomé and Príncipe": "STP",
-        "Senegal": "SEN",
-        "Seychelles": "SYC",
-        "Sierra Leone": "SLE",
-        "Somalia": "SOM",
-        "South Africa": "ZAF",
-        "South Sudan": "SSD",
-        "Sudan": "SDN",
-        "Tanzania": "TZA",
-        "United Republic of Tanzania": "TZA",
-        "Togo": "TGO",
-        "Tunisia": "TUN",
-        "Uganda": "UGA",
-        "Zambia": "ZMB",
-        "Zimbabwe": "ZWE",
-
-        # Europa
-        "Portugal": "PRT",
-        "Spain": "ESP",
-        "France": "FRA",
-        "Germany": "DEU",
-        "Italy": "ITA",
-        "Belgium": "BEL",
-        "Netherlands": "NLD",
-        "Ireland": "IRL",
-        "United Kingdom": "GBR",
-        "Austria": "AUT",
-        "Switzerland": "CHE",
-        "Poland": "POL",
-        "Czechia": "CZE",
-        "Czech Republic": "CZE",
-        "Denmark": "DNK",
-        "Sweden": "SWE",
-        "Norway": "NOR",
-        "Finland": "FIN",
-        "Greece": "GRC",
-        "Romania": "ROU",
-        "Bulgaria": "BGR",
-        "Croatia": "HRV",
-        "Hungary": "HUN",
-        "Slovakia": "SVK",
-        "Slovenia": "SVN",
-        "Lithuania": "LTU",
-        "Latvia": "LVA",
-        "Estonia": "EST",
-        "Malta": "MLT",
-        "Cyprus": "CYP",
-        "Luxembourg": "LUX",
-        "Iceland": "ISL",
-        "Serbia": "SRB",
-        "Montenegro": "MNE",
-        "North Macedonia": "MKD",
-        "Albania": "ALB",
-        "Bosnia and Herzegovina": "BIH",
-        "Moldova": "MDA",
-        "Ukraine": "UKR",
-        "Turkey": "TUR",
-        "Türkiye": "TUR",
-        "Russia": "RUS",
-        "Andorra": "AND",
-        "Liechtenstein": "LIE",
-        "Monaco": "MCO",
-        "San Marino": "SMR",
-        "Vatican City": "VAT",
-        "Belarus": "BLR",
-
-        # Médio Oriente
-        "United Arab Emirates": "ARE",
-        "UAE": "ARE",
-        "Bahrain": "BHR",
-        "Iran": "IRN",
-        "Iraq": "IRQ",
-        "Israel": "ISR",
-        "Jordan": "JOR",
-        "Kuwait": "KWT",
-        "Lebanon": "LBN",
-        "Oman": "OMN",
-        "Palestine": "PSE",
-        "Qatar": "QAT",
-        "Saudi Arabia": "SAU",
-        "Syria": "SYR",
-        "Yemen": "YEM",
-
-        # Américas
-        "Argentina": "ARG",
-        "Bolivia": "BOL",
-        "Brazil": "BRA",
-        "Canada": "CAN",
-        "Chile": "CHL",
-        "Colombia": "COL",
-        "Costa Rica": "CRI",
-        "Cuba": "CUB",
-        "Dominican Republic": "DOM",
-        "Ecuador": "ECU",
-        "Guatemala": "GTM",
-        "Guyana": "GUY",
-        "Honduras": "HND",
-        "Haiti": "HTI",
-        "Jamaica": "JAM",
-        "Mexico": "MEX",
-        "Nicaragua": "NIC",
-        "Panama": "PAN",
-        "Paraguay": "PRY",
-        "Peru": "PER",
-        "Suriname": "SUR",
-        "Trinidad and Tobago": "TTO",
-        "Uruguay": "URY",
-        "United States": "USA",
-        "United States of America": "USA",
-        "Venezuela": "VEN",
-
-        # Ásia-Pacífico
-        "Afghanistan": "AFG",
-        "Armenia": "ARM",
-        "Australia": "AUS",
-        "Azerbaijan": "AZE",
-        "Bangladesh": "BGD",
-        "Bhutan": "BTN",
-        "Brunei": "BRN",
-        "China": "CHN",
-        "Fiji": "FJI",
-        "Georgia": "GEO",
-        "India": "IND",
-        "Indonesia": "IDN",
-        "Japan": "JPN",
-        "Kazakhstan": "KAZ",
-        "Kyrgyzstan": "KGZ",
-        "Cambodia": "KHM",
-        "Kiribati": "KIR",
-        "Laos": "LAO",
-        "Sri Lanka": "LKA",
-        "Malaysia": "MYS",
-        "Maldives": "MDV",
-        "Marshall Islands": "MHL",
-        "Micronesia": "FSM",
-        "Mongolia": "MNG",
-        "Myanmar": "MMR",
-        "Nepal": "NPL",
-        "New Zealand": "NZL",
-        "Pakistan": "PAK",
-        "Philippines": "PHL",
-        "Palau": "PLW",
-        "Papua New Guinea": "PNG",
-        "North Korea": "PRK",
-        "South Korea": "KOR",
-        "Singapore": "SGP",
-        "Solomon Islands": "SLB",
-        "Tajikistan": "TJK",
-        "Thailand": "THA",
-        "Timor-Leste": "TLS",
-        "Turkmenistan": "TKM",
-        "Tonga": "TON",
-        "Tuvalu": "TUV",
-        "Uzbekistan": "UZB",
-        "Vanuatu": "VUT",
-        "Vietnam": "VNM",
-        "Samoa": "WSM",
-    }
-
-    # --------------------------------------------------------
-    # ISO2 -> ISO3
-    # --------------------------------------------------------
-
-    iso2_to_iso3 = {
-
-        "DZ": "DZA",
-        "AO": "AGO",
-        "BJ": "BEN",
-        "BW": "BWA",
-        "BF": "BFA",
-        "BI": "BDI",
-        "CM": "CMR",
-        "CV": "CPV",
-        "CF": "CAF",
-        "TD": "TCD",
-        "KM": "COM",
-        "CG": "COG",
-        "CD": "COD",
-        "CI": "CIV",
-        "DJ": "DJI",
-        "EG": "EGY",
-        "GQ": "GNQ",
-        "ER": "ERI",
-        "SZ": "SWZ",
-        "ET": "ETH",
-        "GA": "GAB",
-        "GM": "GMB",
-        "GH": "GHA",
-        "GN": "GIN",
-        "GW": "GNB",
-        "KE": "KEN",
-        "LS": "LSO",
-        "LR": "LBR",
-        "LY": "LBY",
-        "MG": "MDG",
-        "MW": "MWI",
-        "ML": "MLI",
-        "MR": "MRT",
-        "MU": "MUS",
-        "MA": "MAR",
-        "MZ": "MOZ",
-        "NA": "NAM",
-        "NE": "NER",
-        "NG": "NGA",
-        "RW": "RWA",
-        "ST": "STP",
-        "SN": "SEN",
-        "SC": "SYC",
-        "SL": "SLE",
-        "SO": "SOM",
-        "ZA": "ZAF",
-        "SS": "SSD",
-        "SD": "SDN",
-        "TZ": "TZA",
-        "TG": "TGO",
-        "TN": "TUN",
-        "UG": "UGA",
-        "ZM": "ZMB",
-        "ZW": "ZWE",
-
-        "PT": "PRT",
-        "ES": "ESP",
-        "FR": "FRA",
-        "DE": "DEU",
-        "IT": "ITA",
-        "BE": "BEL",
-        "NL": "NLD",
-        "IE": "IRL",
-        "GB": "GBR",
-        "AT": "AUT",
-        "CH": "CHE",
-        "PL": "POL",
-        "CZ": "CZE",
-        "DK": "DNK",
-        "SE": "SWE",
-        "NO": "NOR",
-        "FI": "FIN",
-        "GR": "GRC",
-        "RO": "ROU",
-        "BG": "BGR",
-        "HR": "HRV",
-        "HU": "HUN",
-        "SK": "SVK",
-        "SI": "SVN",
-        "LT": "LTU",
-        "LV": "LVA",
-        "EE": "EST",
-        "MT": "MLT",
-        "CY": "CYP",
-        "LU": "LUX",
-        "IS": "ISL",
-        "RS": "SRB",
-        "ME": "MNE",
-        "MK": "MKD",
-        "AL": "ALB",
-        "BA": "BIH",
-        "MD": "MDA",
-        "UA": "UKR",
-        "TR": "TUR",
-        "RU": "RUS",
-        "AD": "AND",
-        "LI": "LIE",
-        "MC": "MCO",
-        "SM": "SMR",
-        "VA": "VAT",
-        "BY": "BLR",
-
-        "AE": "ARE",
-        "BH": "BHR",
-        "IR": "IRN",
-        "IQ": "IRQ",
-        "IL": "ISR",
-        "JO": "JOR",
-        "KW": "KWT",
-        "LB": "LBN",
-        "OM": "OMN",
-        "PS": "PSE",
-        "QA": "QAT",
-        "SA": "SAU",
-        "SY": "SYR",
-        "YE": "YEM",
-
-        "AR": "ARG",
-        "BO": "BOL",
-        "BR": "BRA",
-        "CA": "CAN",
-        "CL": "CHL",
-        "CO": "COL",
-        "CR": "CRI",
-        "CU": "CUB",
-        "DO": "DOM",
-        "EC": "ECU",
-        "GT": "GTM",
-        "GY": "GUY",
-        "HN": "HND",
-        "HT": "HTI",
-        "JM": "JAM",
-        "MX": "MEX",
-        "NI": "NIC",
-        "PA": "PAN",
-        "PY": "PRY",
-        "PE": "PER",
-        "SR": "SUR",
-        "TT": "TTO",
-        "UY": "URY",
-        "US": "USA",
-        "VE": "VEN",
-
-        "AF": "AFG",
-        "AM": "ARM",
-        "AU": "AUS",
-        "AZ": "AZE",
-        "BD": "BGD",
-        "BT": "BTN",
-        "BN": "BRN",
-        "CN": "CHN",
-        "FJ": "FJI",
-        "GE": "GEO",
-        "IN": "IND",
-        "ID": "IDN",
-        "JP": "JPN",
-        "KZ": "KAZ",
-        "KG": "KGZ",
-        "KH": "KHM",
-        "KI": "KIR",
-        "LA": "LAO",
-        "LK": "LKA",
-        "MY": "MYS",
-        "MV": "MDV",
-        "MH": "MHL",
-        "FM": "FSM",
-        "MN": "MNG",
-        "MM": "MMR",
-        "NP": "NPL",
-        "NZ": "NZL",
-        "PK": "PAK",
-        "PH": "PHL",
-        "PW": "PLW",
-        "PG": "PNG",
-        "KP": "PRK",
-        "KR": "KOR",
-        "SG": "SGP",
-        "SB": "SLB",
-        "TJ": "TJK",
-        "TH": "THA",
-        "TL": "TLS",
-        "TM": "TKM",
-        "TO": "TON",
-        "TV": "TUV",
-        "UZ": "UZB",
-        "VU": "VUT",
-        "VN": "VNM",
-        "WS": "WSM",
-    }
+    allowed = REGIONS[
+        region
+    ]
 
     filtered = []
 
-    for item in results:
+    for result in results:
 
-        raw_country = (
-            item.get("country")
-            or ""
-        ).strip()
+        country = result.get(
+            "country",
+            ""
+        )
 
-        if not raw_country:
-            continue
-
-        # Normalização básica
-        country_upper = raw_country.upper()
-
-        # Primeiro: já é ISO3?
-        country_code = country_upper
-
-        # Segundo: ISO2?
-        if country_upper in iso2_to_iso3:
-
-            country_code = iso2_to_iso3[
-                country_upper
-            ]
-
-        # Terceiro: nome completo
-        if raw_country in country_names:
-
-            country_code = country_names[
-                raw_country
-            ]
-
-        # Quarto: comparação sem acentos,
-        # para casos como São Tomé / Sao Tome
-        normalised_country = unicodedata.normalize(
-            "NFKD",
-            raw_country
-        ).encode(
-            "ascii",
-            "ignore"
-        ).decode(
-            "ascii"
-        ).lower()
-
-        for name, iso3 in country_names.items():
-
-            normalised_name = unicodedata.normalize(
-                "NFKD",
-                name
-            ).encode(
-                "ascii",
-                "ignore"
-            ).decode(
-                "ascii"
-            ).lower()
-
-            if normalised_country == normalised_name:
-
-                country_code = iso3
-                break
+        country_code = country_to_iso3(
+            country
+        )
 
         if country_code in allowed:
 
-            filtered.append(item)
+            filtered.append(
+                result
+            )
 
     return filtered
 
@@ -1559,156 +1598,238 @@ def apply_category_filter(
     category
 ):
 
-    category = (
-        category or ""
-    ).strip()
-
     if not category:
         return results
 
-    return [
-        item
-        for item in results
-        if item.get("category")
-        == category
-    ]
+    if category.lower() in [
+        "",
+        "todas",
+        "todos",
+        "all",
+    ]:
+        return results
+
+    filtered = []
+
+    for result in results:
+
+        if result.get(
+            "category",
+            ""
+        ).lower() == category.lower():
+
+            filtered.append(
+                result
+            )
+
+    return filtered
 
 
 # ============================================================
 # DEDUPLICAÇÃO
 # ============================================================
 
-def deduplicate_results(results):
+def deduplicate_results(
+    results
+):
 
     seen = set()
+
     output = []
 
-    for item in results:
+    for result in results:
 
         key = (
-            item.get("source"),
-            item.get("title", "").strip().lower(),
-            item.get("date"),
+            normalise_search_term(
+                result.get(
+                    "title",
+                    ""
+                )
+            ),
+            normalise_search_term(
+                result.get(
+                    "country",
+                    ""
+                )
+            ),
+            result.get(
+                "date",
+                ""
+            ),
         )
 
         if key in seen:
             continue
 
-        seen.add(key)
+        seen.add(
+            key
+        )
 
-        output.append(item)
+        output.append(
+            result
+        )
 
     return output
 
 
 # ============================================================
-# API — SOURCES
+# FONTES
 # ============================================================
+
+SOURCES = [
+
+    {
+        "name": "TED — Europa / Internacional",
+        "region": "Europa / Internacional",
+        "mode": "api",
+        "url": "https://ted.europa.eu/"
+    },
+
+    {
+        "name": "World Bank Procurement",
+        "region": "Global",
+        "mode": "api",
+        "url": "https://projects.worldbank.org/en/projects-operations/procurement"
+    },
+
+    {
+        "name": "African Development Bank",
+        "region": "África",
+        "mode": "portal",
+        "url": "https://www.afdb.org/en/projects-and-operations/procurement"
+    },
+
+    {
+        "name": "SAM.gov",
+        "region": "Américas",
+        "mode": "portal",
+        "url": "https://sam.gov/content/opportunities"
+    },
+
+    {
+        "name": "BASE Portugal",
+        "region": "Portugal",
+        "mode": "portal",
+        "url": "https://www.base.gov.pt/"
+    },
+
+    {
+        "name": "Contratación Pública España",
+        "region": "Espanha",
+        "mode": "portal",
+        "url": "https://contrataciondelestado.es/"
+    },
+]
+
+
+# ============================================================
+# ROTAS PRINCIPAIS
+# ============================================================
+
+@app.get("/")
+def root():
+
+    return FileResponse(
+        BASE_DIR / "index.html"
+    )
+
+
+@app.get("/app.js")
+def javascript():
+
+    return FileResponse(
+        BASE_DIR / "App.js",
+        media_type="application/javascript"
+    )
+
+
+@app.get("/manifest.json")
+def manifest():
+
+    return FileResponse(
+        BASE_DIR / "manifest.json"
+    )
+
+
+@app.get("/health")
+@app.get("/api/health")
+def health():
+
+    return {
+        "ok": True,
+        "service": "Arqueologia Radar"
+    }
+
 
 @app.get("/api/sources")
-def sources():
+def get_sources():
 
-    return [
-
-        {
-            "name": "TED",
-            "region": "Europa / Internacional",
-            "mode": "api",
-            "url": "https://ted.europa.eu/"
-        },
-
-        {
-            "name": "World Bank Procurement",
-            "region": "Global",
-            "mode": "api",
-            "url": "https://projects.worldbank.org/en/projects-operations/procurement"
-        },
-
-        {
-            "name": "African Development Bank",
-            "region": "África",
-            "mode": "portal",
-            "url": "https://www.afdb.org/en/projects-and-operations/procurement"
-        },
-
-        {
-            "name": "SAM.gov",
-            "region": "Américas",
-            "mode": "portal",
-            "url": "https://sam.gov/content/opportunities"
-        },
-
-        {
-            "name": "BASE Portugal",
-            "region": "Portugal",
-            "mode": "portal",
-            "url": "https://www.base.gov.pt/"
-        },
-
-        {
-            "name": "Contratación Pública España",
-            "region": "Espanha",
-            "mode": "portal",
-            "url": "https://contrataciondelestado.es/"
-        },
-
-    ]
+    return SOURCES
 
 
 # ============================================================
-# API — SEARCH
+# PESQUISA PRINCIPAL
 # ============================================================
 
 @app.get("/api/search")
 def search(
-
     q: str = Query(
-        default="archaeology"
+        "archaeology"
     ),
-
     region: str = Query(
-        default=""
+        ""
     ),
-
     category: str = Query(
-        default=""
-    ),
+        ""
+    )
 ):
 
-    user_term = normalise_search_term(
+    search_term = clean_text(
         q
     )
 
+    if not search_term:
+        search_term = "archaeology"
+
     terms = []
 
-    if user_term:
-        terms.append(
-            user_term
-        )
+    terms.append(
+        search_term
+    )
 
     for term in DEFAULT_TERMS:
 
-        if term.lower() not in [
-            x.lower()
-            for x in terms
-        ]:
+        if normalise_search_term(
+            term
+        ) != normalise_search_term(
+            search_term
+        ):
 
-            terms.append(term)
+            terms.append(
+                term
+            )
 
-    terms = terms[:12]
+    terms = list(
+        dict.fromkeys(
+            terms
+        )
+    )[:12]
 
     all_results = []
+
     diagnostics = []
 
     # --------------------------------------------------------
     # TED
     # --------------------------------------------------------
 
+    max_workers = min(
+        8,
+        len(terms)
+    )
+
     with ThreadPoolExecutor(
-        max_workers=min(
-            8,
-            len(terms)
-        )
+        max_workers=max_workers
     ) as executor:
 
         futures = {
@@ -1725,7 +1846,7 @@ def search(
 
             try:
 
-                results, diagnostic = (
+                results, diag = (
                     future.result()
                 )
 
@@ -1734,33 +1855,43 @@ def search(
                 )
 
                 diagnostics.append(
-                    diagnostic
+                    diag
                 )
 
             except Exception as exc:
 
+                term = futures[
+                    future
+                ]
+
                 diagnostics.append({
-                    "source": f"TED — {futures[future]}",
+                    "source": (
+                        f"TED — {term}"
+                    ),
                     "ok": False,
                     "count": 0,
-                    "error": str(exc),
+                    "error": str(
+                        exc
+                    ),
                 })
 
     # --------------------------------------------------------
     # WORLD BANK
     # --------------------------------------------------------
 
-    wb_results, wb_diagnostic = (
-        query_world_bank()
-    )
+    for term in terms[:4]:
 
-    all_results.extend(
-        wb_results
-    )
+        results, diag = query_world_bank(
+            term
+        )
 
-    diagnostics.append(
-        wb_diagnostic
-    )
+        all_results.extend(
+            results
+        )
+
+        diagnostics.append(
+            diag
+        )
 
     # --------------------------------------------------------
     # DEDUPLICAÇÃO
@@ -1771,7 +1902,7 @@ def search(
     )
 
     # --------------------------------------------------------
-    # FILTROS
+    # FILTRO REGIONAL
     # --------------------------------------------------------
 
     all_results = apply_region_filter(
@@ -1779,31 +1910,42 @@ def search(
         region
     )
 
+    # --------------------------------------------------------
+    # FILTRO DE CATEGORIA
+    # --------------------------------------------------------
+
     all_results = apply_category_filter(
         all_results,
         category
     )
 
     # --------------------------------------------------------
-    # SEGURANÇA FINAL:
-    # remover concursos expirados
+    # REMOVER PRAZOS EXPIRADOS
     # --------------------------------------------------------
-
-    today = today_utc()
 
     valid_results = []
 
-    for item in all_results:
+    for result in all_results:
 
-        deadline = parse_date(
-            item.get("deadline")
+        deadline = result.get(
+            "deadline",
+            ""
         )
 
-        if deadline and deadline < today:
-            continue
+        if deadline:
+
+            deadline_date = parse_date(
+                deadline
+            )
+
+            if (
+                deadline_date
+                and deadline_date < today_utc()
+            ):
+                continue
 
         valid_results.append(
-            item
+            result
         )
 
     all_results = valid_results
@@ -1812,77 +1954,72 @@ def search(
     # ORDENAÇÃO
     # --------------------------------------------------------
 
+    def sort_key(item):
+
+        deadline = parse_date(
+            item.get(
+                "deadline"
+            )
+        )
+
+        pub_date = parse_date(
+            item.get(
+                "date"
+            )
+        )
+
+        deadline_value = (
+            deadline
+            or date.max
+        )
+
+        pub_date_value = (
+            pub_date
+            or date.min
+        )
+
+        return (
+            item.get(
+                "score",
+                0
+            ),
+            deadline_value,
+            pub_date_value,
+        )
+
     all_results.sort(
-        key=lambda x: (
-            x.get("score", 0),
-            x.get("deadline") or "9999-12-31",
-            x.get("date") or "",
-        ),
+        key=sort_key,
         reverse=True
     )
 
-    return JSONResponse({
-
-        "ok": True,
-
-        "query": user_term,
-
-        "region": region,
-
-        "category": category,
-
-        "results": all_results,
-
-        "diagnostics": diagnostics,
-
-        "portal_count": 2,
-
-        "api_count": 2,
-
-        "sources": 28,
-
-        "searched_at": today.isoformat(),
-
-    })
-
-
-# ============================================================
-# FICHEIROS DA APLICAÇÃO
-# ============================================================
-
-@app.get("/")
-def root():
-
-    return FileResponse(
-        BASE_DIR / "index.html"
-    )
-
-
-@app.get("/app.js")
-def app_js():
-
-    return FileResponse(
-        BASE_DIR / "app.js"
-    )
-
-
-@app.get("/manifest.json")
-def manifest():
-
-    return FileResponse(
-        BASE_DIR / "manifest.json"
-    )
-
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
-
-@app.get("/health")
-def health():
+    # --------------------------------------------------------
+    # RESPOSTA
+    # --------------------------------------------------------
 
     return {
         "ok": True,
-        "app": "Arqueologia Radar",
-        "date": today_utc().isoformat(),
+        "query": search_term,
+        "region": region,
+        "category": category,
+        "results": all_results,
+        "diagnostics": diagnostics,
+        "portal_count": 2,
+        "api_count": 2,
+        "sources": 28,
+        "searched_at": today_utc().isoformat(),
     }
+
+
+# ============================================================
+# ARRANQUE LOCAL
+# ============================================================
+
+if __name__ == "__main__":
+
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000
+    )
