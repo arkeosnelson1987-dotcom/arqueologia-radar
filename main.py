@@ -1084,7 +1084,6 @@ def notice_to_result(notice):
 # ============================================================
 
 def query_ted(term):
-
     diagnostics = {
         "source": f"TED — {term}",
         "ok": False,
@@ -1092,29 +1091,25 @@ def query_ted(term):
         "query": "",
         "raw_count": 0,
         "ted_total": None,
+        "ted_response_keys": [],
+        "sample": ""
     }
 
-    results = []
+    query = build_ted_query(term)
+    diagnostics["query"] = query
+
+    payload = {
+        "query": query,
+        "fields": TED_FIELDS,
+        "page": 1,
+        "limit": PAGE_SIZE,
+        "scope": "ALL",
+        "checkQuerySyntax": False,
+        "paginationMode": "PAGE_NUMBER",
+        "onlyLatestVersions": False
+    }
 
     try:
-
-        query = build_ted_query(
-            term
-        )
-
-        diagnostics["query"] = query
-
-        payload = {
-            "query": query,
-            "fields": TED_FIELDS,
-            "page": 1,
-            "limit": PAGE_SIZE,
-            "scope": "ALL",
-            "checkQuerySyntax": False,
-            "paginationMode": "PAGE_NUMBER",
-            "onlyLatestVersions": False,
-        }
-
         response = requests.post(
             TED_URL,
             json=payload,
@@ -1122,8 +1117,70 @@ def query_ted(term):
         )
 
         response.raise_for_status()
-
         data = response.json()
+
+        diagnostics["ted_response_keys"] = (
+            list(data.keys())
+            if isinstance(data, dict)
+            else str(type(data))
+        )
+
+        diagnostics["ted_total"] = (
+            data.get("totalNoticeCount")
+            if isinstance(data, dict)
+            else None
+        )
+
+        notices = []
+
+        if isinstance(data, dict):
+            for key in ("notices", "results", "data"):
+                value = data.get(key)
+
+                if isinstance(value, list):
+                    notices = value
+                    break
+
+                if isinstance(value, dict):
+                    for subkey in ("notices", "results", "data", "rows"):
+                        subvalue = value.get(subkey)
+                        if isinstance(subvalue, list):
+                            notices = subvalue
+                            break
+
+                    if notices:
+                        break
+
+        elif isinstance(data, list):
+            notices = data
+
+        diagnostics["raw_count"] = len(notices)
+
+        if notices:
+            diagnostics["sample"] = str(notices[0])[:1000]
+        else:
+            diagnostics["sample"] = "SEM AVISOS"
+
+        results = []
+
+        for notice in notices:
+            try:
+                result = notice_to_result(notice)
+
+                if result:
+                    results.append(result)
+
+            except Exception:
+                continue
+
+        diagnostics["count"] = len(results)
+        diagnostics["ok"] = True
+
+        return results, diagnostics
+
+    except Exception as e:
+        diagnostics["error"] = str(e)
+        return [], diagnostics
 
         # ----------------------------------------------------
         # DIAGNÓSTICO DA RESPOSTA TED
