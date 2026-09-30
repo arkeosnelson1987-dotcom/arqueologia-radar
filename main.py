@@ -954,6 +954,8 @@ def notice_to_result(notice):
 
 def query_ted(term):
 
+    def query_ted(term):
+
     diagnostics = {
         "source": f"TED — {term}",
         "ok": False,
@@ -984,26 +986,39 @@ def query_ted(term):
 
         data = response.json()
 
+        # ----------------------------------------------------
+        # TED devolve os resultados normalmente em "notices"
+        # ----------------------------------------------------
+
         notices = []
 
         if isinstance(data, dict):
 
-            for key in [
-                "notices",
-                "results",
-                "data",
-            ]:
+            if isinstance(
+                data.get("notices"),
+                list
+            ):
+                notices = data["notices"]
 
-                value = data.get(key)
+            elif isinstance(
+                data.get("results"),
+                list
+            ):
+                notices = data["results"]
 
-                if isinstance(value, list):
-
-                    notices = value
-                    break
+            elif isinstance(
+                data.get("data"),
+                list
+            ):
+                notices = data["data"]
 
         elif isinstance(data, list):
 
             notices = data
+
+        # ----------------------------------------------------
+        # Converter avisos TED
+        # ----------------------------------------------------
 
         for notice in notices:
 
