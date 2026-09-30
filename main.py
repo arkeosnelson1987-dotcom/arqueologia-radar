@@ -606,6 +606,49 @@ def search_ted_term(term):
         "total": total,
         "notices": notices,
     }
+    # ============================================================
+# WORLD BANK
+# ============================================================
+def search_world_bank(term):
+    """
+    Pesquisa oportunidades de procurement no World Bank.
+    """
+    try:
+        params = {
+            "qterm": term,
+            "rows": 100,
+            "format": "json",
+        }
+
+        response = requests.get(
+            WORLD_BANK_URL,
+            params=params,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Arqueologia-Radar/1.0",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        return {
+            "term": term,
+            "ok": True,
+            "error": "",
+            "count": len(data.get("procnotices", [])),
+            "notices": data.get("procnotices", []),
+        }
+
+    except Exception as exc:
+        return {
+            "term": term,
+            "ok": False,
+            "error": str(exc),
+            "count": 0,
+            "notices": [],
+        }
 # ============================================================
 # NORMALIZAÇÃO DE AVISOS
 # ============================================================
