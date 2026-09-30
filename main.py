@@ -964,18 +964,19 @@ def query_ted(term):
 
     try:
 
-        params = {
-            "q": build_ted_query(term),
+        query = build_ted_query(term)
+
+        payload = {
+            "query": query,
+            "fields": TED_FIELDS,
             "page": 1,
             "limit": PAGE_SIZE,
-            "fields": ",".join(
-                TED_FIELDS
-            ),
+            "paginationMode": "PAGE_NUMBER",
         }
 
-        response = requests.get(
+        response = requests.post(
             TED_URL,
-            params=params,
+            json=payload,
             timeout=REQUEST_TIMEOUT
         )
 
@@ -996,6 +997,7 @@ def query_ted(term):
                 value = data.get(key)
 
                 if isinstance(value, list):
+
                     notices = value
                     break
 
@@ -1016,7 +1018,9 @@ def query_ted(term):
             )
 
             if result:
-                results.append(result)
+                results.append(
+                    result
+                )
 
         diagnostics["ok"] = True
         diagnostics["count"] = len(results)
