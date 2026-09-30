@@ -1096,18 +1096,19 @@ def query_ted(term):
     }
 
     query = build_ted_query(term)
-    diagnostics["query"] = query
-
+    diagnostics["query"] = 
+   
     payload = {
-        "query": query,
-        "fields": TED_FIELDS,
-        "page": 1,
-        "limit": PAGE_SIZE,
-        "scope": "ALL",
-        "checkQuerySyntax": False,
-        "paginationMode": "PAGE_NUMBER",
-        "onlyLatestVersions": False
-    }
+    "query": query,
+    "fields": TED_FIELDS,
+    "page": 1,
+    "limit": PAGE_SIZE,
+    "scope": "ALL",
+    "checkQuerySyntax": False,
+    "paginationMode": "PAGE_NUMBER",
+    "onlyLatestVersions": False,
+    "sort": "publication-date:DESC"
+}
 
     try:
         response = requests.post(
