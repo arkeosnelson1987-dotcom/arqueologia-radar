@@ -1082,7 +1082,6 @@ def notice_to_result(notice):
 # ============================================================
 # TED — PESQUISA
 # ============================================================
-
 def query_ted(term):
     diagnostics = {
         "source": f"TED — {term}",
@@ -1096,19 +1095,18 @@ def query_ted(term):
     }
 
     query = build_ted_query(term)
-    diagnostics["query"] = 
-   
+    diagnostics["query"] = query
+
     payload = {
-    "query": query,
-    "fields": TED_FIELDS,
-    "page": 1,
-    "limit": PAGE_SIZE,
-    "scope": "ALL",
-    "checkQuerySyntax": False,
-    "paginationMode": "PAGE_NUMBER",
-    "onlyLatestVersions": False,
-    "sort": "publication-date:DESC"
-}
+        "query": query,
+        "fields": TED_FIELDS,
+        "page": 1,
+        "limit": PAGE_SIZE,
+        "scope": "ALL",
+        "checkQuerySyntax": False,
+        "paginationMode": "PAGE_NUMBER",
+        "onlyLatestVersions": False
+    }
 
     try:
         response = requests.post(
@@ -1135,7 +1133,13 @@ def query_ted(term):
         notices = []
 
         if isinstance(data, dict):
-            for key in ("notices", "results", "data"):
+
+            for key in (
+                "notices",
+                "results",
+                "data"
+            ):
+
                 value = data.get(key)
 
                 if isinstance(value, list):
@@ -1143,111 +1147,13 @@ def query_ted(term):
                     break
 
                 if isinstance(value, dict):
-                    for subkey in ("notices", "results", "data", "rows"):
-                        subvalue = value.get(subkey)
-                        if isinstance(subvalue, list):
-                            notices = subvalue
-                            break
 
-                    if notices:
-                        break
-
-        elif isinstance(data, list):
-            notices = data
-
-        diagnostics["raw_count"] = len(notices)
-
-        if notices:
-            diagnostics["sample"] = str(notices[0])[:1000]
-        else:
-            diagnostics["sample"] = "SEM AVISOS"
-
-        results = []
-
-        for notice in notices:
-            try:
-                result = notice_to_result(notice)
-
-                if result:
-                    results.append(result)
-
-            except Exception:
-                continue
-
-        diagnostics["count"] = len(results)
-        diagnostics["ok"] = True
-
-        return results, diagnostics
-
-    except Exception as e:
-        diagnostics["error"] = str(e)
-        return [], diagnostics
-
-        # ----------------------------------------------------
-        # DIAGNÓSTICO DA RESPOSTA TED
-        # ----------------------------------------------------
-
-        if isinstance(
-            data,
-            dict
-        ):
-
-            diagnostics["ted_response_keys"] = (
-                list(data.keys())
-            )
-
-            diagnostics["ted_total"] = (
-                data.get(
-                    "totalNoticeCount"
-                )
-            )
-
-        else:
-
-            diagnostics["ted_response_keys"] = (
-                str(type(data))
-            )
-
-        # ----------------------------------------------------
-        # EXTRAÇÃO DOS AVISOS
-        # ----------------------------------------------------
-
-        notices = []
-
-        if isinstance(
-            data,
-            dict
-        ):
-
-            for key in [
-                "notices",
-                "results",
-                "data",
-            ]:
-
-                value = data.get(
-                    key
-                )
-
-                if isinstance(
-                    value,
-                    list
-                ):
-
-                    notices = value
-                    break
-
-                if isinstance(
-                    value,
-                    dict
-                ):
-
-                    for subkey in [
+                    for subkey in (
                         "notices",
                         "results",
                         "data",
-                        "rows",
-                    ]:
+                        "rows"
+                    ):
 
                         subvalue = value.get(
                             subkey
@@ -1257,61 +1163,55 @@ def query_ted(term):
                             subvalue,
                             list
                         ):
-
                             notices = subvalue
                             break
 
                     if notices:
                         break
 
-        elif isinstance(
-            data,
-            list
-        ):
+        elif isinstance(data, list):
 
             notices = data
 
-        raw_count = len(
+        diagnostics["raw_count"] = len(
             notices
         )
 
-        diagnostics["raw_count"] = (
-            raw_count
-        )
+        if notices:
 
-        diagnostics["sample"] = (
-            str(notices[0])[:1000]
-            if notices
-            else "SEM AVISOS"
-        )
+            diagnostics["sample"] = str(
+                notices[0]
+            )[:1000]
 
-        # ----------------------------------------------------
-        # CONVERSÃO
-        # ----------------------------------------------------
+        else:
+
+            diagnostics["sample"] = (
+                "SEM AVISOS"
+            )
+
+        results = []
 
         for notice in notices:
 
-            if not isinstance(
-                notice,
-                dict
-            ):
-                continue
+            try:
 
-            result = notice_to_result(
-                notice
-            )
-
-            if result:
-
-                results.append(
-                    result
+                result = notice_to_result(
+                    notice
                 )
 
-        diagnostics["ok"] = True
+                if result:
+                    results.append(
+                        result
+                    )
+
+            except Exception:
+                continue
 
         diagnostics["count"] = len(
             results
         )
+
+        diagnostics["ok"] = True
 
         return results, diagnostics
 
@@ -1322,7 +1222,6 @@ def query_ted(term):
         )
 
         return [], diagnostics
-
 
 # ============================================================
 # WORLD BANK
