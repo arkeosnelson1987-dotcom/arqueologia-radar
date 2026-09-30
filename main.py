@@ -16,6 +16,7 @@ app = FastAPI(
     version="1.0.0"
 )
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
+WORLD_BANK_URL = "https://search.worldbank.org/api/v2/procnotices"
 PERIOD_DAYS = 365
 # TED aceita até 250 resultados por página.
 PAGE_SIZE = 250
