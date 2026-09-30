@@ -20,14 +20,14 @@ app = FastAPI(
 )
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
-WORLD_BANK_URL = "https://search.worldbank.org/api/v2/procnotices"
+
+WORLD_BANK_URL = (
+    "https://search.worldbank.org/api/v2/procnotices"
+)
+
 PERIOD_DAYS = 365
 
-# TED aceita até 250 resultados por página.
 PAGE_SIZE = 250
-
-# Número máximo de páginas por termo.
-# 4 x 250 = 1.000 avisos por termo.
 MAX_PAGES_PER_TERM = 4
 
 REQUEST_TIMEOUT = 25
@@ -44,7 +44,10 @@ TED_FIELDS = [
     "deadline",
 ]
 
-# Termos adicionais pesquisados automaticamente.
+# ============================================================
+# TERMOS DE PESQUISA
+# ============================================================
+
 DEFAULT_TERMS = [
     "archaeology",
     "archaeological",
@@ -58,7 +61,10 @@ DEFAULT_TERMS = [
     "patrimonio cultural",
 ]
 
-# Países por região.
+# ============================================================
+# REGIÕES
+# ============================================================
+
 REGIONS = {
     "Europa": {
         "AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK",
@@ -116,15 +122,13 @@ def cutoff_date():
 
 
 def clean_text(value):
-    """
-    Extrai texto de estruturas TED multilíngues.
-    Dá preferência a português, depois inglês.
-    """
     if value is None:
         return ""
 
     if isinstance(value, str):
-        return fix_mojibake(html.unescape(value)).strip()
+        return fix_mojibake(
+            html.unescape(value)
+        ).strip()
 
     if isinstance(value, list):
         parts = []
@@ -156,7 +160,9 @@ def clean_text(value):
 
             if lang in value:
 
-                txt = clean_text(value[lang])
+                txt = clean_text(
+                    value[lang]
+                )
 
                 if txt:
                     return txt
@@ -168,13 +174,12 @@ def clean_text(value):
             if txt:
                 return txt
 
-    return fix_mojibake(str(value)).strip()
+    return fix_mojibake(
+        str(value)
+    ).strip()
 
 
 def mojibake_score(text):
-    """
-    Mede sinais típicos de texto mal descodificado.
-    """
 
     markers = [
         "Ã",
@@ -190,14 +195,13 @@ def mojibake_score(text):
         "�",
     ]
 
-    return sum(text.count(x) for x in markers)
+    return sum(
+        text.count(x)
+        for x in markers
+    )
 
 
 def fix_mojibake(value):
-    """
-    Corrige UTF-8 interpretado incorretamente como
-    Latin-1/Windows-1252.
-    """
 
     if value is None:
         return ""
@@ -216,17 +220,21 @@ def fix_mojibake(value):
     }
 
     for old, new in replacements.items():
-        text = text.replace(old, new)
+        text = text.replace(
+            old,
+            new
+        )
 
     for _ in range(3):
 
         before = text
 
         try:
-            candidate = before.encode(
-                "latin1"
-            ).decode(
-                "utf-8"
+
+            candidate = (
+                before
+                .encode("latin1")
+                .decode("utf-8")
             )
 
         except (
@@ -235,8 +243,12 @@ def fix_mojibake(value):
         ):
             break
 
-        if mojibake_score(candidate) < mojibake_score(before):
+        if (
+            mojibake_score(candidate)
+            < mojibake_score(before)
+        ):
             text = candidate
+
         else:
             break
 
@@ -244,15 +256,6 @@ def fix_mojibake(value):
 
 
 def parse_date(value):
-    """
-    Converte datas TED para date.
-
-    Aceita:
-      YYYY-MM-DD
-      YYYY-MM-DDTHH:MM:SS
-      YYYY-MM-DD+02:00
-      YYYYMMDD
-    """
 
     if value is None:
         return None
@@ -281,37 +284,58 @@ def parse_date(value):
 
     text = str(value).strip()
 
-    m = re.search(
-        r"\b(\d{4})(\d{2})(\d{2})\b",
+    # YYYY-MM-DD
+    match = re.search(
+        r"\b(\d{4})-(\d{2})-(\d{2})\b",
         text
     )
 
-    if m:
+    if match:
 
         try:
 
             return date(
-                int(m.group(1)),
-                int(m.group(2)),
-                int(m.group(3))
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3))
             )
 
         except ValueError:
             pass
 
-    m = re.search(
-        r"\b(\d{4})-(\d{2})-(\d{2})\b",
+    # YYYYMMDD
+    match = re.search(
+        r"\b(\d{4})(\d{2})(\d{2})\b",
         text
     )
 
-    if m:
+    if match:
 
         try:
 
             return date(
-                int(m.group(1)),
-                int(m.group(2)),
-                int(m.group(3))
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3))
+            )
+
+        except ValueError:
+            pass
+
+    # ISO com timestamp
+    match = re.search(
+        r"\b(\d{4})-(\d{2})-(\d{2})T",
+        text
+    )
+
+    if match:
+
+        try:
+
+            return date(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3))
             )
 
         except ValueError:
@@ -331,9 +355,6 @@ def format_date(value):
 
 
 def extract_all_dates(value):
-    """
-    Procura todas as datas existentes numa estrutura TED.
-    """
 
     found = []
 
@@ -390,9 +411,6 @@ def extract_all_dates(value):
 
 
 def extract_deadline(notice):
-    """
-    Extrai o prazo mais relevante de um aviso TED.
-    """
 
     candidates = []
 
@@ -482,7 +500,9 @@ def extract_country(value):
 
         for item in value:
 
-            result = extract_country(item)
+            result = extract_country(
+                item
+            )
 
             if result:
                 return result
@@ -491,24 +511,52 @@ def extract_country(value):
 
     if isinstance(value, dict):
 
+        for key in [
+            "code",
+            "country_code",
+            "iso3",
+            "iso_code",
+            "value",
+            "name",
+        ]:
+
+            if key in value:
+
+                result = extract_country(
+                    value[key]
+                )
+
+                if result:
+                    return result
+
         for item in value.values():
 
-            result = extract_country(item)
+            result = extract_country(
+                item
+            )
 
             if result:
                 return result
 
         return ""
 
-    return str(value).strip().upper()
+    text = str(value).strip()
+
+    # ISO 3
+    if re.fullmatch(
+        r"[A-Za-z]{3}",
+        text
+    ):
+        return text.upper()
+
+    return text
 
 
 def normalise_search_term(term):
-    """
-    Limita e limpa o termo introduzido pelo utilizador.
-    """
 
-    term = (term or "").strip()
+    term = (
+        term or ""
+    ).strip()
 
     if not term:
         return "archaeology"
@@ -620,7 +668,9 @@ def classify_notice(
     notice_type=""
 ):
 
-    text = f"{title} {notice_type}".lower()
+    text = (
+        f"{title} {notice_type}"
+    ).lower()
 
     direct_hits = sum(
         1
@@ -637,12 +687,6 @@ def classify_notice(
     construction_hits = sum(
         1
         for term in CONSTRUCTION_TERMS
-        if term.lower() in text
-    )
-
-    noise_hits = sum(
-        1
-        for term in NOISE_TERMS
         if term.lower() in text
     )
 
@@ -670,12 +714,16 @@ def classify_notice(
         return "Património cultural"
 
     if construction_hits and heritage_hits:
-        return "Grande projeto / potencial subcontratação"
+        return (
+            "Grande projeto / potencial subcontratação"
+        )
 
     if heritage_hits:
         return "Património cultural"
 
-    return "Grande projeto / potencial subcontratação"
+    return (
+        "Grande projeto / potencial subcontratação"
+    )
 
 
 def calculate_score(
@@ -742,7 +790,7 @@ def calculate_score(
     elif category == "Património cultural":
         score += 10
 
-    elif category == "Grande projeto / potencial subcontratação":
+    else:
         score += 5
 
     if construction and (
@@ -787,9 +835,6 @@ def calculate_score(
 # ============================================================
 
 def build_ted_query(term):
-    """
-    Query TED estável.
-    """
 
     cutoff = cutoff_date().strftime(
         "%Y%m%d"
@@ -802,7 +847,10 @@ def build_ted_query(term):
     )
 
 
-def ted_request(query, page):
+def ted_request(
+    query,
+    page
+):
 
     payload = {
         "query": query,
@@ -832,14 +880,13 @@ def ted_request(query, page):
 
 def search_ted_term(term):
 
-    """
-    Pesquisa um termo no TED.
-    Faz várias páginas apenas quando necessário.
-    """
+    term = normalise_search_term(
+        term
+    )
 
-    term = normalise_search_term(term)
-
-    query = build_ted_query(term)
+    query = build_ted_query(
+        term
+    )
 
     notices = []
 
@@ -917,7 +964,13 @@ def search_ted_term(term):
 def search_world_bank(term):
 
     """
-    Pesquisa oportunidades de procurement no World Bank.
+    Pesquisa avisos de procurement do World Bank.
+
+    A API v2 devolve um envelope com:
+        procnotices
+        total
+        rows
+        os
     """
 
     try:
@@ -925,6 +978,7 @@ def search_world_bank(term):
         params = {
             "qterm": term,
             "rows": 100,
+            "os": 0,
             "format": "json",
         }
 
@@ -942,20 +996,42 @@ def search_world_bank(term):
 
         data = response.json()
 
+        raw_notices = data.get(
+            "procnotices",
+            []
+        )
+
+        # Algumas respostas podem vir como dicionário
+        # indexado pelo ID.
+        if isinstance(
+            raw_notices,
+            dict
+        ):
+            notices = list(
+                raw_notices.values()
+            )
+
+        elif isinstance(
+            raw_notices,
+            list
+        ):
+            notices = raw_notices
+
+        else:
+            notices = []
+
         return {
             "term": term,
             "ok": True,
             "error": "",
-            "count": len(
+            "count": len(notices),
+            "total": int(
                 data.get(
-                    "procnotices",
-                    []
-                )
+                    "total",
+                    len(notices)
+                ) or 0
             ),
-            "notices": data.get(
-                "procnotices",
-                []
-            ),
+            "notices": notices,
         }
 
     except Exception as exc:
@@ -965,12 +1041,13 @@ def search_world_bank(term):
             "ok": False,
             "error": str(exc),
             "count": 0,
+            "total": 0,
             "notices": [],
         }
 
 
 # ============================================================
-# NORMALIZAÇÃO DE AVISOS
+# NORMALIZAÇÃO TED
 # ============================================================
 
 def notice_to_result(notice):
@@ -981,12 +1058,10 @@ def notice_to_result(notice):
         )
     )
 
-    publication_raw = notice.get(
-        "publication-date"
-    )
-
     publication = parse_date(
-        publication_raw
+        notice.get(
+            "publication-date"
+        )
     )
 
     if not publication:
@@ -1050,14 +1125,12 @@ def notice_to_result(notice):
 
     text = title.lower()
 
-    relevant_words = (
-        DIRECT_TERMS
-        + HERITAGE_TERMS
-    )
-
     has_relevant_term = any(
         term.lower() in text
-        for term in relevant_words
+        for term in (
+            DIRECT_TERMS
+            + HERITAGE_TERMS
+        )
     )
 
     has_archaeology_cpv = any(
@@ -1120,6 +1193,483 @@ def notice_to_result(notice):
 
 
 # ============================================================
+# NORMALIZAÇÃO WORLD BANK
+# ============================================================
+
+def world_bank_notice_to_result(
+    notice
+):
+
+    """
+    Converte um aviso World Bank para o formato
+    interno utilizado pelo Radar.
+
+    A estrutura do World Bank é diferente da TED.
+    """
+
+    if not isinstance(
+        notice,
+        dict
+    ):
+        return None
+
+    # --------------------------------------------------------
+    # ID
+    # --------------------------------------------------------
+
+    notice_id = clean_text(
+        notice.get("id")
+        or notice.get("notice_id")
+        or notice.get("procurement_notice_id")
+    )
+
+    # --------------------------------------------------------
+    # TÍTULO
+    # --------------------------------------------------------
+
+    title = clean_text(
+        notice.get("notice_text")
+        or notice.get("title")
+        or notice.get("notice_title")
+        or notice.get("bid_description")
+        or notice.get("display_title")
+        or notice.get("description")
+    )
+
+    if not title:
+        return None
+
+    # --------------------------------------------------------
+    # PAÍS
+    # --------------------------------------------------------
+
+    country_raw = (
+        notice.get("country_code")
+        or notice.get("project_ctry_code")
+        or notice.get("country")
+        or notice.get("project_ctry_name")
+        or notice.get("country_name")
+        or ""
+    )
+
+    country = extract_country(
+        country_raw
+    )
+
+    # Se vier o nome completo do país,
+    # convertemos para ISO quando possível.
+    country_name = clean_text(
+        notice.get(
+            "project_ctry_name"
+        )
+        or notice.get(
+            "country_name"
+        )
+        or notice.get(
+            "country"
+        )
+    )
+
+    country_map = {
+        "Afghanistan": "AFG",
+        "Albania": "ALB",
+        "Algeria": "DZA",
+        "Angola": "AGO",
+        "Argentina": "ARG",
+        "Australia": "AUS",
+        "Austria": "AUT",
+        "Bangladesh": "BGD",
+        "Belgium": "BEL",
+        "Benin": "BEN",
+        "Bolivia": "BOL",
+        "Bosnia and Herzegovina": "BIH",
+        "Botswana": "BWA",
+        "Brazil": "BRA",
+        "Bulgaria": "BGR",
+        "Burkina Faso": "BFA",
+        "Burundi": "BDI",
+        "Cambodia": "KHM",
+        "Cameroon": "CMR",
+        "Canada": "CAN",
+        "Cape Verde": "CPV",
+        "Central African Republic": "CAF",
+        "Chad": "TCD",
+        "Chile": "CHL",
+        "China": "CHN",
+        "Colombia": "COL",
+        "Comoros": "COM",
+        "Congo": "COG",
+        "Costa Rica": "CRI",
+        "Croatia": "HRV",
+        "Cyprus": "CYP",
+        "Czech Republic": "CZE",
+        "Democratic Republic of the Congo": "COD",
+        "Denmark": "DNK",
+        "Dominican Republic": "DOM",
+        "Ecuador": "ECU",
+        "Egypt": "EGY",
+        "El Salvador": "SLV",
+        "Eritrea": "ERI",
+        "Estonia": "EST",
+        "Eswatini": "SWZ",
+        "Ethiopia": "ETH",
+        "Fiji": "FJI",
+        "Finland": "FIN",
+        "France": "FRA",
+        "Gabon": "GAB",
+        "Gambia": "GMB",
+        "Georgia": "GEO",
+        "Germany": "DEU",
+        "Ghana": "GHA",
+        "Greece": "GRC",
+        "Guatemala": "GTM",
+        "Guinea": "GIN",
+        "Guinea-Bissau": "GNB",
+        "Guyana": "GUY",
+        "Haiti": "HTI",
+        "Honduras": "HND",
+        "Hungary": "HUN",
+        "Iceland": "ISL",
+        "India": "IND",
+        "Indonesia": "IDN",
+        "Iran": "IRN",
+        "Iraq": "IRQ",
+        "Ireland": "IRL",
+        "Israel": "ISR",
+        "Italy": "ITA",
+        "Jamaica": "JAM",
+        "Japan": "JPN",
+        "Jordan": "JOR",
+        "Kazakhstan": "KAZ",
+        "Kenya": "KEN",
+        "Kyrgyz Republic": "KGZ",
+        "Laos": "LAO",
+        "Latvia": "LVA",
+        "Lebanon": "LBN",
+        "Lesotho": "LSO",
+        "Liberia": "LBR",
+        "Libya": "LBY",
+        "Lithuania": "LTU",
+        "Luxembourg": "LUX",
+        "Madagascar": "MDG",
+        "Malawi": "MWI",
+        "Malaysia": "MYS",
+        "Maldives": "MDV",
+        "Mali": "MLI",
+        "Malta": "MLT",
+        "Mauritania": "MRT",
+        "Mauritius": "MUS",
+        "Mexico": "MEX",
+        "Moldova": "MDA",
+        "Mongolia": "MNG",
+        "Montenegro": "MNE",
+        "Morocco": "MAR",
+        "Mozambique": "MOZ",
+        "Myanmar": "MMR",
+        "Namibia": "NAM",
+        "Nepal": "NPL",
+        "Netherlands": "NLD",
+        "New Zealand": "NZL",
+        "Nicaragua": "NIC",
+        "Niger": "NER",
+        "Nigeria": "NGA",
+        "North Macedonia": "MKD",
+        "Norway": "NOR",
+        "Pakistan": "PAK",
+        "Panama": "PAN",
+        "Papua New Guinea": "PNG",
+        "Paraguay": "PRY",
+        "Peru": "PER",
+        "Philippines": "PHL",
+        "Poland": "POL",
+        "Portugal": "PRT",
+        "Romania": "ROU",
+        "Rwanda": "RWA",
+        "Senegal": "SEN",
+        "Serbia": "SRB",
+        "Sierra Leone": "SLE",
+        "Singapore": "SGP",
+        "Slovak Republic": "SVK",
+        "Slovenia": "SVN",
+        "Solomon Islands": "SLB",
+        "Somalia": "SOM",
+        "South Africa": "ZAF",
+        "South Korea": "KOR",
+        "South Sudan": "SSD",
+        "Spain": "ESP",
+        "Sri Lanka": "LKA",
+        "Sudan": "SDN",
+        "Suriname": "SUR",
+        "Sweden": "SWE",
+        "Switzerland": "CHE",
+        "Syria": "SYR",
+        "Tajikistan": "TJK",
+        "Tanzania": "TZA",
+        "Thailand": "THA",
+        "Timor-Leste": "TLS",
+        "Togo": "TGO",
+        "Tunisia": "TUN",
+        "Türkiye": "TUR",
+        "Turkey": "TUR",
+        "Turkmenistan": "TKM",
+        "Uganda": "UGA",
+        "Ukraine": "UKR",
+        "United Kingdom": "GBR",
+        "United States": "USA",
+        "United States of America": "USA",
+        "Uruguay": "URY",
+        "Uzbekistan": "UZB",
+        "Vanuatu": "VUT",
+        "Venezuela": "VEN",
+        "Vietnam": "VNM",
+        "Yemen": "YEM",
+        "Zambia": "ZMB",
+        "Zimbabwe": "ZWE",
+    }
+
+    if country_name in country_map:
+
+        country = country_map[
+            country_name
+        ]
+
+    # --------------------------------------------------------
+    # DATAS
+    # --------------------------------------------------------
+
+    publication = None
+
+    for field in [
+        "publication_date",
+        "publish_date",
+        "publish_date_iso",
+        "noticedate",
+        "notice_date",
+        "docdt",
+        "date",
+    ]:
+
+        if field in notice:
+
+            publication = parse_date(
+                notice.get(field)
+            )
+
+            if publication:
+                break
+
+    # Alguns registos podem não apresentar
+    # explicitamente a data de publicação.
+    # Nesse caso tentamos outras datas.
+    if not publication:
+
+        for field in [
+            "submission_date",
+            "deadline_date",
+            "effective_date",
+        ]:
+
+            if field in notice:
+
+                publication = parse_date(
+                    notice.get(field)
+                )
+
+                if publication:
+                    break
+
+    if not publication:
+        publication = today_utc()
+
+    # Não vamos apresentar avisos muito antigos.
+    if publication < cutoff_date():
+        return None
+
+    # --------------------------------------------------------
+    # PRAZO
+    # --------------------------------------------------------
+
+    deadline = None
+
+    for field in [
+        "submission_date",
+        "deadline_date",
+        "bid_submission_date",
+        "closing_date",
+        "closingdate",
+        "effective_date",
+    ]:
+
+        if field in notice:
+
+            candidate = parse_date(
+                notice.get(field)
+            )
+
+            if candidate:
+
+                if (
+                    candidate >= today_utc()
+                    or deadline is None
+                ):
+                    deadline = candidate
+
+    # --------------------------------------------------------
+    # TIPO
+    # --------------------------------------------------------
+
+    notice_type = clean_text(
+        notice.get(
+            "notice_type"
+        )
+        or notice.get(
+            "noticeType"
+        )
+        or notice.get(
+            "procurement_method"
+        )
+    )
+
+    # --------------------------------------------------------
+    # SECTOR / CATEGORIA
+    # --------------------------------------------------------
+
+    sector = clean_text(
+        notice.get(
+            "sector"
+        )
+        or notice.get(
+            "procurement_category"
+        )
+        or notice.get(
+            "category"
+        )
+    )
+
+    # --------------------------------------------------------
+    # PROJECTO / ENTIDADE
+    # --------------------------------------------------------
+
+    buyer = clean_text(
+        notice.get(
+            "project_name"
+        )
+        or notice.get(
+            "project"
+        )
+        or notice.get(
+            "agency_name"
+        )
+        or notice.get(
+            "implementing_agency"
+        )
+        or notice.get(
+            "borrower"
+        )
+        or notice.get(
+            "project_ctry_name"
+        )
+    )
+
+    # --------------------------------------------------------
+    # TEXTO PARA CLASSIFICAÇÃO
+    # --------------------------------------------------------
+
+    classification_text = (
+        f"{title} "
+        f"{sector} "
+        f"{notice_type}"
+    )
+
+    category = classify_notice(
+        classification_text,
+        [],
+        notice_type
+    )
+
+    score = calculate_score(
+        classification_text,
+        [],
+        category,
+        deadline
+    )
+
+    # World Bank já devolveu o resultado porque
+    # correspondeu ao termo pesquisado.
+    # Garantimos, contudo, relevância arqueológica.
+    text_lower = classification_text.lower()
+
+    relevant = any(
+        term.lower() in text_lower
+        for term in (
+            DIRECT_TERMS
+            + HERITAGE_TERMS
+        )
+    )
+
+    if not relevant:
+        return None
+
+    # --------------------------------------------------------
+    # URL
+    # --------------------------------------------------------
+
+    url = clean_text(
+        notice.get(
+            "url"
+        )
+        or notice.get(
+            "notice_url"
+        )
+        or notice.get(
+            "source_url"
+        )
+    )
+
+    if not url and notice_id:
+
+        url = (
+            "https://projects.worldbank.org/"
+            "en/projects-operations/"
+            f"procurement-detail/{notice_id}"
+        )
+
+    # --------------------------------------------------------
+    # RESULTADO NORMALIZADO
+    # --------------------------------------------------------
+
+    return {
+        "title": title,
+        "source": "World Bank",
+        "date": publication.isoformat(),
+        "date_display": publication.strftime(
+            "%d/%m/%Y"
+        ),
+        "country": country,
+        "buyer": buyer,
+        "deadline": (
+            deadline.strftime(
+                "%d/%m/%Y"
+            )
+            if deadline
+            else ""
+        ),
+        "deadline_iso": (
+            deadline.isoformat()
+            if deadline
+            else ""
+        ),
+        "cpv": "",
+        "category": category,
+        "score": score,
+        "url": url,
+        "publication_number": notice_id,
+        "notice_type": notice_type,
+        "sector": sector,
+    }
+
+
+# ============================================================
 # FILTROS
 # ============================================================
 
@@ -1142,12 +1692,24 @@ def apply_region_filter(
     if not allowed:
         return results
 
-    return [
-        item
-        for item in results
-        if item.get("country")
-        in allowed
-    ]
+    filtered = []
+
+    for item in results:
+
+        country = (
+            item.get(
+                "country"
+            )
+            or ""
+        ).upper()
+
+        if country in allowed:
+
+            filtered.append(
+                item
+            )
+
+    return filtered
 
 
 def apply_category_filter(
@@ -1165,8 +1727,9 @@ def apply_category_filter(
     return [
         item
         for item in results
-        if item.get("category")
-        == category
+        if item.get(
+            "category"
+        ) == category
     ]
 
 
@@ -1190,7 +1753,9 @@ def javascript():
         media_type="application/javascript"
     )
 
-    response.headers["Cache-Control"] = (
+    response.headers[
+        "Cache-Control"
+    ] = (
         "no-cache, no-store, must-revalidate"
     )
 
@@ -1211,11 +1776,12 @@ def health():
 
     return {
         "ok": True,
-        "sources": 1,
-        "api_sources": 1,
+        "sources": 2,
+        "api_sources": 2,
         "service": "Arqueologia Radar",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "ted": TED_URL,
+        "world_bank": WORLD_BANK_URL,
     }
 
 
@@ -1228,9 +1794,21 @@ def sources():
             "region": "Europa / internacional",
             "url": "https://ted.europa.eu/",
             "mode": "api",
-        }
+        },
+        {
+            "name": "World Bank Procurement",
+            "region": "Global",
+            "url": (
+                "https://projects.worldbank.org/"
+            ),
+            "mode": "api",
+        },
     ]
 
+
+# ============================================================
+# PESQUISA
+# ============================================================
 
 @app.get("/api/search")
 def search(
@@ -1248,33 +1826,40 @@ def search(
 
     started = datetime.utcnow()
 
-    user_term = normalise_search_term(q)
+    user_term = normalise_search_term(
+        q
+    )
 
     terms = []
 
-    for term in [
-        user_term
-    ] + DEFAULT_TERMS:
+    for term in (
+        [user_term]
+        + DEFAULT_TERMS
+    ):
 
         term = normalise_search_term(
             term
         )
 
-        if (
-            term
-            and term.lower()
-            not in {
-                x.lower()
-                for x in terms
-            }
-        ):
+        if not term:
+            continue
+
+        if term.lower() not in {
+            x.lower()
+            for x in terms
+        }:
+
             terms.append(term)
 
     terms = terms[:12]
 
     diagnostics = []
 
-    all_notices = []
+    # ========================================================
+    # RESULTADOS NORMALIZADOS
+    # ========================================================
+
+    all_results = []
 
     # ========================================================
     # TED
@@ -1299,7 +1884,9 @@ def search(
             futures
         ):
 
-            term = futures[future]
+            term = futures[
+                future
+            ]
 
             try:
 
@@ -1318,11 +1905,21 @@ def search(
                 }
 
             diagnostics.append({
-                "source": f"TED — {term}",
-                "ok": result["ok"],
-                "count": result["count"],
-                "received": result["received"],
-                "total": result["total"],
+                "source": (
+                    f"TED — {term}"
+                ),
+                "ok": result[
+                    "ok"
+                ],
+                "count": result[
+                    "count"
+                ],
+                "received": result[
+                    "received"
+                ],
+                "total": result[
+                    "total"
+                ],
                 "error": result.get(
                     "error",
                     ""
@@ -1331,9 +1928,25 @@ def search(
 
             if result["ok"]:
 
-                all_notices.extend(
-                    result["notices"]
-                )
+                for notice in result[
+                    "notices"
+                ]:
+
+                    try:
+
+                        item = (
+                            notice_to_result(
+                                notice
+                            )
+                        )
+
+                        if item:
+                            all_results.append(
+                                item
+                            )
+
+                    except Exception:
+                        continue
 
     # ========================================================
     # WORLD BANK
@@ -1343,16 +1956,29 @@ def search(
 
         try:
 
-            wb_result = search_world_bank(
-                term
+            wb_result = (
+                search_world_bank(
+                    term
+                )
             )
 
             diagnostics.append({
-                "source": f"World Bank — {term}",
-                "ok": wb_result["ok"],
-                "count": wb_result["count"],
-                "received": wb_result["count"],
-                "total": wb_result["count"],
+                "source": (
+                    f"World Bank — {term}"
+                ),
+                "ok": wb_result[
+                    "ok"
+                ],
+                "count": wb_result[
+                    "count"
+                ],
+                "received": wb_result[
+                    "count"
+                ],
+                "total": wb_result.get(
+                    "total",
+                    wb_result["count"]
+                ),
                 "error": wb_result.get(
                     "error",
                     ""
@@ -1361,14 +1987,36 @@ def search(
 
             if wb_result["ok"]:
 
-                all_notices.extend(
-                    wb_result["notices"]
-                )
+                for notice in (
+                    wb_result[
+                        "notices"
+                    ]
+                ):
+
+                    try:
+
+                        item = (
+                            world_bank_notice_to_result(
+                                notice
+                            )
+                        )
+
+                        if item:
+
+                            all_results.append(
+                                item
+                            )
+
+                    except Exception:
+
+                        continue
 
         except Exception as exc:
 
             diagnostics.append({
-                "source": f"World Bank — {term}",
+                "source": (
+                    f"World Bank — {term}"
+                ),
                 "ok": False,
                 "count": 0,
                 "received": 0,
@@ -1380,62 +2028,52 @@ def search(
     # DEDUPLICAÇÃO
     # ========================================================
 
-    unique_notices = {}
+    unique_results = {}
 
-    for notice in all_notices:
+    for item in all_results:
 
-        number = clean_text(
-            notice.get(
-                "publication-number"
-            )
+        source = item.get(
+            "source",
+            ""
         )
 
-        if number:
+        identifier = item.get(
+            "publication_number",
+            ""
+        )
 
-            unique_notices[
-                number
-            ] = notice
+        title = item.get(
+            "title",
+            ""
+        )
+
+        date_value = item.get(
+            "date",
+            ""
+        )
+
+        if identifier:
+
+            key = (
+                f"{source}|"
+                f"{identifier}"
+            )
 
         else:
 
-            title = clean_text(
-                notice.get(
-                    "notice-title"
-                )
+            key = (
+                f"{source}|"
+                f"{title}|"
+                f"{date_value}"
             )
 
-            pub = clean_text(
-                notice.get(
-                    "publication-date"
-                )
-            )
+        unique_results[
+            key
+        ] = item
 
-            key = f"{title}|{pub}"
-
-            unique_notices[
-                key
-            ] = notice
-
-    # ========================================================
-    # NORMALIZAÇÃO
-    # ========================================================
-
-    results = []
-
-    for notice in unique_notices.values():
-
-        try:
-
-            item = notice_to_result(
-                notice
-            )
-
-            if item:
-                results.append(item)
-
-        except Exception:
-
-            continue
+    results = list(
+        unique_results.values()
+    )
 
     # ========================================================
     # FILTROS
@@ -1483,7 +2121,9 @@ def search(
     )
 
     diagnostics.sort(
-        key=lambda x: x["source"]
+        key=lambda x: x[
+            "source"
+        ]
     )
 
     elapsed = (
@@ -1494,11 +2134,15 @@ def search(
     return JSONResponse({
         "results": results,
         "diagnostics": diagnostics,
-        "portal_count": 1,
-        "api_count": 1,
-        "searched_at": today_utc().isoformat(),
+        "portal_count": 2,
+        "api_count": 2,
+        "searched_at": (
+            today_utc().isoformat()
+        ),
         "period_days": PERIOD_DAYS,
-        "cutoff_date": cutoff_date().isoformat(),
+        "cutoff_date": (
+            cutoff_date().isoformat()
+        ),
         "query": user_term,
         "region": region,
         "category_filter": category,
