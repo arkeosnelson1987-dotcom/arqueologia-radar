@@ -838,7 +838,6 @@ def classify_result(
 # ============================================================
 # QUERY TED
 # ============================================================
-
 def build_ted_query(
     term,
     country_code=None
@@ -1076,7 +1075,6 @@ def notice_to_result(
 # ============================================================
 # PESQUISA TED
 # ============================================================
-
 def query_ted(
     term
 ):
@@ -1119,15 +1117,41 @@ def query_ted(
                 timeout=REQUEST_TIMEOUT
             )
 
-            if response.status_code == 429:
+            # =================================================
+            # DIAGNÓSTICO ESPECIAL PARA ERROS TED
+            # =================================================
 
-                time.sleep(
-                    2 * (attempt + 1)
-                )
+            if response.status_code >= 400:
 
-                continue
+                error_text = response.text
 
-            response.raise_for_status()
+                try:
+                    error_json = response.json()
+                except Exception:
+                    error_json = None
+
+                return [], {
+
+                    "source": "TED",
+
+                    "term": term,
+
+                    "ok": False,
+
+                    "count": 0,
+
+                    "query_sent": query,
+
+                    "status_code":
+                        response.status_code,
+
+                    "error":
+                        error_text,
+
+                    "error_json":
+                        error_json
+
+                }
 
             data = response.json()
 
@@ -1154,15 +1178,20 @@ def query_ted(
 
             status = {
 
-                "source": "TED",
+                "source":
+                    "TED",
 
-                "term": term,
+                "term":
+                    term,
 
-                "ok": True,
+                "ok":
+                    True,
 
-                "count": len(results),
+                "count":
+                    len(results),
 
-                "query": query
+                "query":
+                    query
 
             }
 
@@ -1180,18 +1209,25 @@ def query_ted(
 
     return [], {
 
-        "source": "TED",
+        "source":
+            "TED",
 
-        "term": term,
+        "term":
+            term,
 
-        "ok": False,
+        "ok":
+            False,
 
-        "count": 0,
+        "count":
+            0,
 
-        "error": last_error
+        "query_sent":
+            query,
+
+        "error":
+            last_error
 
     }
-
 
 # ============================================================
 # WORLD BANK
