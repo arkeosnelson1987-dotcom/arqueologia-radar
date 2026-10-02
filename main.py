@@ -510,7 +510,139 @@ def extract_country(value):
 
     upper = text.upper()
 
-    # Primeiro procurar códigos ISO
+    # Códigos ISO-3 utilizados pela TED
+    ISO3_MAP = {
+        # África
+        "AGO": "Angola",
+        "DZA": "Argélia",
+        "BEN": "Benim",
+        "BWA": "Botswana",
+        "BFA": "Burkina Faso",
+        "BDI": "Burundi",
+        "CPV": "Cabo Verde",
+        "CMR": "Camarões",
+        "CAF": "República Centro-Africana",
+        "TCD": "Chade",
+        "COM": "Comores",
+        "COD": "República Democrática do Congo",
+        "COG": "Congo",
+        "CIV": "Costa do Marfim",
+        "DJI": "Djibouti",
+        "EGY": "Egito",
+        "GNQ": "Guiné Equatorial",
+        "ERI": "Eritreia",
+        "SWZ": "Eswatini",
+        "ETH": "Etiópia",
+        "GAB": "Gabão",
+        "GMB": "Gâmbia",
+        "GHA": "Gana",
+        "GIN": "Guiné",
+        "GNB": "Guiné-Bissau",
+        "KEN": "Quénia",
+        "LSO": "Lesoto",
+        "LBR": "Libéria",
+        "LBY": "Líbia",
+        "MDG": "Madagáscar",
+        "MWI": "Malawi",
+        "MLI": "Mali",
+        "MRT": "Mauritânia",
+        "MUS": "Maurícia",
+        "MAR": "Marrocos",
+        "MOZ": "Moçambique",
+        "NAM": "Namíbia",
+        "NER": "Níger",
+        "NGA": "Nigéria",
+        "RWA": "Ruanda",
+        "SEN": "Senegal",
+        "SLE": "Serra Leoa",
+        "SOM": "Somália",
+        "SDN": "Sudão",
+        "SSD": "Sudão do Sul",
+        "TZA": "Tanzânia",
+        "TGO": "Togo",
+        "TUN": "Tunísia",
+        "UGA": "Uganda",
+        "ZAF": "África do Sul",
+        "ZMB": "Zâmbia",
+        "ZWE": "Zimbabwe",
+
+        # Europa
+        "AUT": "Áustria",
+        "BEL": "Bélgica",
+        "BGR": "Bulgária",
+        "HRV": "Croácia",
+        "CYP": "Chipre",
+        "CZE": "Chéquia",
+        "DNK": "Dinamarca",
+        "EST": "Estónia",
+        "FIN": "Finlândia",
+        "FRA": "França",
+        "DEU": "Alemanha",
+        "GRC": "Grécia",
+        "HUN": "Hungria",
+        "IRL": "Irlanda",
+        "ITA": "Itália",
+        "LVA": "Letónia",
+        "LTU": "Lituânia",
+        "LUX": "Luxemburgo",
+        "MLT": "Malta",
+        "NLD": "Países Baixos",
+        "POL": "Polónia",
+        "PRT": "Portugal",
+        "ROU": "Roménia",
+        "SVK": "Eslováquia",
+        "SVN": "Eslovénia",
+        "ESP": "Espanha",
+        "SWE": "Suécia",
+        "ISL": "Islândia",
+        "LIE": "Liechtenstein",
+        "NOR": "Noruega",
+        "CHE": "Suíça",
+        "GBR": "Reino Unido",
+
+        # Américas
+        "USA": "Estados Unidos",
+        "CAN": "Canadá",
+        "MEX": "México",
+        "BRA": "Brasil",
+        "ARG": "Argentina",
+        "CHL": "Chile",
+        "COL": "Colômbia",
+        "PER": "Peru",
+        "URY": "Uruguai",
+        "PRY": "Paraguai",
+        "BOL": "Bolívia",
+        "ECU": "Equador",
+        "CRI": "Costa Rica",
+        "PAN": "Panamá",
+
+        # Médio Oriente / Ásia
+        "SAU": "Arábia Saudita",
+        "ARE": "Emirados Árabes Unidos",
+        "QAT": "Qatar",
+        "OMN": "Omã",
+        "ISR": "Israel",
+        "JOR": "Jordânia",
+        "LBN": "Líbano",
+        "TUR": "Turquia",
+        "IND": "Índia",
+        "CHN": "China",
+        "JPN": "Japão",
+        "KOR": "Coreia do Sul",
+        "AUS": "Austrália",
+        "NZL": "Nova Zelândia"
+    }
+
+    # Primeiro procurar códigos ISO-3 da TED
+    for code, country in ISO3_MAP.items():
+
+        if re.search(
+            rf"\b{re.escape(code)}\b",
+            upper
+        ):
+            return country
+
+    # Depois procurar os códigos ISO-2 já existentes
     for code, country in COUNTRY_MAP.items():
 
         if re.search(
@@ -519,10 +651,15 @@ def extract_country(value):
         ):
             return country
 
-    # Depois nomes
+    # Finalmente procurar nomes dos países
     normalized = normalize_text(text)
 
     for country in COUNTRY_MAP.values():
+
+        if normalize_text(country) in normalized:
+            return country
+
+    for country in ISO3_MAP.values():
 
         if normalize_text(country) in normalized:
             return country
@@ -1336,11 +1473,30 @@ def region_matches(result, region):
     if not region:
         return True
 
+    # Normalizar o nome da região
+    region_text = str(region or "").strip()
+
+    # Aceitar também a forma corrompida que apareceu
+    # no teste HTTP: Ãfrica
+    if region_text in (
+        "Ãfrica",
+        "ÃƒÂfrica"
+    ):
+        region_text = "África"
+
+    region_normalized = normalize_text(
+        region_text
+    )
+
     country = normalize_text(
         result.get("country", "")
     )
 
-    if region == "Europa":
+    # --------------------------------------------------------
+    # EUROPA
+    # --------------------------------------------------------
+
+    if region_normalized == "europa":
 
         european_names = [
             normalize_text(v)
@@ -1352,47 +1508,99 @@ def region_matches(result, region):
             for name in european_names
         )
 
-    if region == "África":
+    # --------------------------------------------------------
+    # ÁFRICA
+    # --------------------------------------------------------
 
-        african_terms = [
-            "africa",
+    if region_normalized == "africa":
+
+        african_countries = [
             "angola",
-            "mocambique",
-            "mozambique",
+            "argelia",
+            "benim",
+            "botswana",
+            "burkina faso",
+            "burundi",
+            "cabo verde",
+            "camaroes",
+            "republica centro africana",
+            "chade",
+            "comores",
+            "republica democratica do congo",
+            "congo",
+            "costa do marfim",
+            "djibouti",
+            "egito",
+            "eritrea",
+            "eswatini",
+            "etiopia",
+            "gabao",
+            "gambia",
+            "gana",
+            "guine",
+            "guine bissau",
+            "guine equatorial",
             "quenia",
-            "kenya",
-            "tanzania",
-            "uganda",
+            "lesoto",
+            "liberia",
+            "libia",
+            "madagascar",
+            "malawi",
+            "mali",
+            "mauritania",
+            "mauricia",
             "marrocos",
-            "morocco",
-            "africa do sul",
-            "south africa",
+            "mocambique",
+            "namibia",
+            "niger",
             "nigeria",
-            "ghana",
+            "ruanda",
             "senegal",
+            "serra leoa",
+            "seicheles",
+            "somalia",
+            "sudao",
+            "sudao do sul",
+            "tanzania",
+            "togo",
+            "tunisia",
+            "uganda",
+            "africa do sul",
             "zambia",
             "zimbabwe"
         ]
 
         return any(
             term in country
-            for term in african_terms
+            for term in african_countries
         )
 
-    if region == "Américas":
+    # --------------------------------------------------------
+    # AMÉRICAS
+    # --------------------------------------------------------
+
+    if region_normalized == "americas":
 
         american_terms = [
-            "america",
-            "brazil",
             "brasil",
+            "brazil",
             "chile",
             "colombia",
             "argentina",
             "peru",
             "mexico",
             "canada",
+            "estados unidos",
             "united states",
-            "estados unidos"
+            "uruguai",
+            "uruguay",
+            "paraguai",
+            "paraguay",
+            "bolivia",
+            "equador",
+            "ecuador",
+            "costa rica",
+            "panama"
         ]
 
         return any(
@@ -1400,28 +1608,41 @@ def region_matches(result, region):
             for term in american_terms
         )
 
-    if region == "Portugal":
+    # --------------------------------------------------------
+    # PORTUGAL
+    # --------------------------------------------------------
 
-        return (
-            "portugal" in country
-        )
+    if region_normalized == "portugal":
 
-    if region == "Espanha":
+        return "portugal" in country
+
+    # --------------------------------------------------------
+    # ESPANHA
+    # --------------------------------------------------------
+
+    if region_normalized == "espanha":
 
         return (
             "espanha" in country
             or "spain" in country
         )
 
-    if region == "Médio Oriente":
+    # --------------------------------------------------------
+    # MÉDIO ORIENTE
+    # --------------------------------------------------------
+
+    if region_normalized == "medio oriente":
 
         terms = [
             "oman",
-            "saudi",
-            "arabia",
-            "uae",
-            "emirates",
-            "qatar"
+            "arabia saudita",
+            "saudi arabia",
+            "emirados arabes unidos",
+            "united arab emirates",
+            "qatar",
+            "israel",
+            "jordania",
+            "libano"
         ]
 
         return any(
@@ -1429,15 +1650,21 @@ def region_matches(result, region):
             for term in terms
         )
 
-    if region == "Ásia-Pacífico":
+    # --------------------------------------------------------
+    # ÁSIA-PACÍFICO
+    # --------------------------------------------------------
+
+    if region_normalized == "asia-pacifico":
 
         terms = [
             "australia",
             "new zealand",
+            "japao",
             "japan",
             "china",
             "india",
-            "asia"
+            "coreia do sul",
+            "south korea"
         ]
 
         return any(
