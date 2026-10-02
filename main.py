@@ -850,7 +850,7 @@ def build_ted_query(
         return ""
 
     # ========================================================
-    # MODO AUTOMÁTICO DO RADAR
+    # MODO AUTOMÁTICO
     # ========================================================
 
     if term.lower() in (
@@ -862,48 +862,43 @@ def build_ted_query(
 
         for item in DEFAULT_TERMS[:12]:
 
-            # TED aceita melhor os termos individuais
-            # sem aspas.
-            clean_item = clean_query(item)
+            item = clean_query(item)
 
-            if " " in clean_item:
-                parts.append(
-                    f'FT~{clean_item}'
-                )
-            else:
-                parts.append(
-                    f'FT~{clean_item}'
-                )
+            parts.append(
+                f'FT~"{item}"'
+            )
 
         query = " OR ".join(parts)
 
     else:
 
         # ====================================================
-        # PESQUISA DIRETA DO UTILIZADOR
+        # PESQUISA DIRETA
         # ====================================================
 
-        # Remover caracteres que podem interferir
-        # com a sintaxe do TED.
-        term = re.sub(
-            r'["\']',
-            '',
-            term
+        # Retirar aspas introduzidas pelo utilizador
+        term = term.replace(
+            '"',
+            ''
         )
 
-        term = term.strip()
+        term = term.replace(
+            "'",
+            ''
+        )
 
-        # Para uma pesquisa simples:
-        query = f"FT~{term}"
+        # O TED funciona melhor com a expressão
+        # entre aspas.
+        query = f'FT~"{term}"'
 
     # ========================================================
-    # FILTRO DE PAÍS
+    # PAÍS
     # ========================================================
 
     if country_code:
 
         query += (
-            f" AND buyer-country:{country_code}"
+            f" AND buyer-country={country_code}"
         )
 
     # ========================================================
