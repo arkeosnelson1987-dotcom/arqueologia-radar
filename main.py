@@ -1827,7 +1827,298 @@ def get_sources():
             if source["mode"] == "portal"
         )
     }
+    # ============================================================
+# ENDPOINT SEARCH
+# ============================================================
+@app.get("/api/search")
+def search(
+    q: str = Query(
+        "archaeology"
+    ),
+    region: str = "",
+    category: str = ""
+):
 
+    results = []
+    diagnostics = []
+
+    # --------------------------------------------------------
+    # PESQUISA
+    # --------------------------------------------------------
+    #
+    # "archaeology" = modo automático do Radar
+    #
+    # Qualquer outro termo introduzido pelo utilizador
+    # é pesquisado literalmente, sem acrescentar
+    # automaticamente todos os termos de arqueologia.
+    #
+    # Isto permite testar, por exemplo:
+    # archaeology
+    # archaeological
+    # heritage
+    # banana123456
+    # --------------------------------------------------------
+
+    user_query = clean_query(q)
+
+    automatic_mode = (
+        not user_query
+        or user_query.lower() == "archaeology"
+    )
+
+    if automatic_mode:
+
+        search_terms = [
+            "archaeological excavation",
+            "archaeological monitoring",
+            "archaeological services",
+            "archaeology",
+            "archaeological",
+            "excavation",
+            "cultural heritage",
+            "heritage",
+            "archaeological survey",
+            "archaeological assessment"
+        ]
+
+        world_bank_terms = [
+            "archaeology",
+            "archaeological",
+            "cultural heritage",
+            "archaeological excavation"
+        ]
+
+    else:
+
+        search_terms = [
+            user_query
+        ]
+
+        world_bank_terms = [
+            user_query
+        ]
+
+    # --------------------------------------------------------
+    # REMOVER DUPLICADOS DOS TERMOS
+    # --------------------------------------------------------
+
+    clean_terms = []
+
+    for term in search_terms:
+
+        if term.lower() not in [
+            x.lower()
+            for x in clean_terms
+        ]:
+
+            clean_terms.append(
+                term
+            )
+
+    clean_world_bank_terms = []
+
+    for term in world_bank_terms:
+
+        if term.lower() not in [
+            x.lower()
+            for x in clean_world_bank_terms
+        ]:
+
+            clean_world_bank_terms.append(
+                term
+            )
+
+    # --------------------------------------------------------
+    # EXECUÇÃO EM PARALELO
+    # --------------------------------------------------------
+
+    tasks = []
+
+    with ThreadPoolExecutor(
+        max_workers=10
+    ) as executor:
+
+        for term in clean_terms:
+
+            tasks.append(
+                executor.submit(
+                    query_ted,
+                    term
+                )
+            )
+
+        for term in clean_world_bank_terms:
+
+            tasks.append(
+                executor.submit(
+                    query_world_bank,
+                    term
+                )
+            )
+
+        for future in as_completed(
+            tasks
+        ):
+
+            try:
+
+                task_results, status = (
+                    future.result()
+                )
+
+                results.extend(
+                    task_results
+                )
+
+                diagnostics.append(
+                    status
+                )
+
+            except Exception as exc:
+
+                diagnostics.append(
+                    {
+                        "source": "API",
+                        "ok": False,
+                        "count": 0,
+                        "error": str(exc)
+                    }
+                )
+
+    # --------------------------------------------------------
+    # DEDUPLICAÇÃO
+    # --------------------------------------------------------
+
+    results = deduplicate_results(
+        results
+    )
+
+    # --------------------------------------------------------
+    # FILTRO DE REGIÃO
+    # --------------------------------------------------------
+
+    if region:
+
+        results = [
+            result
+            for result in results
+            if region_matches(
+                result,
+                region
+            )
+        ]
+
+    # --------------------------------------------------------
+    # FILTRO DE CATEGORIA
+    # --------------------------------------------------------
+
+    if category:
+
+        results = [
+            result
+            for result in results
+            if result.get(
+                "category"
+            ) == category
+        ]
+
+    # --------------------------------------------------------
+    # REMOVER DEADLINES EXPIRADOS
+    # --------------------------------------------------------
+
+    filtered_results = []
+
+    today = today_utc()
+
+    for result in results:
+
+        deadline_text = result.get(
+            "deadline",
+            ""
+        )
+
+        deadline_date = parse_date(
+            deadline_text
+        )
+
+        if deadline_date:
+
+            if deadline_date < today:
+
+                continue
+
+        filtered_results.append(
+            result
+        )
+
+    results = filtered_results
+
+    # --------------------------------------------------------
+    # ORDENAÇÃO
+    # --------------------------------------------------------
+
+    def result_date(result):
+
+        parsed = parse_date(
+            result.get(
+                "date",
+                ""
+            )
+        )
+
+        if parsed:
+
+            return parsed
+
+        return date.min
+
+    results.sort(
+        key=lambda item: (
+            result_date(item),
+            item.get(
+                "score",
+                0
+            )
+        ),
+        reverse=True
+    )
+
+    # --------------------------------------------------------
+    # CONTADORES
+    # --------------------------------------------------------
+
+    api_count = sum(
+        1
+        for source in SOURCES
+        if source["mode"] == "api"
+    )
+
+    portal_count = sum(
+        1
+        for source in SOURCES
+        if source["mode"] == "portal"
+        and (
+            not region
+            or source["region"] in (
+                region,
+                "Global"
+            )
+        )
+    )
+
+    return {
+        "ok": True,
+        "query": q,
+        "region": region,
+        "category": category,
+        "results": results,
+        "count": len(results),
+        "sources": len(SOURCES),
+        "api_sources": api_count,
+        "portal_count": portal_count,
+        "diagnostics": diagnostics,
+        "searched_at": today_utc().isoformat()
+    }
 
 # ============================================================
 # ENDPOINT SEARCH
@@ -2065,82 +2356,7 @@ def search(
 
         if deadline_date:
 
-            if deadline_date < today:
-
-                continue
-
-        filtered_results.append(
-            result
-        )
-
-    results = filtered_results
-
-    # --------------------------------------------------------
-    # ORDENAÇÃO
-    # --------------------------------------------------------
-
-    def result_date(result):
-
-        parsed = parse_date(
-            result.get(
-                "date",
-                ""
-            )
-        )
-
-        if parsed:
-
-            return parsed
-
-        return date.min
-
-    results.sort(
-        key=lambda item: (
-            result_date(item),
-            item.get(
-                "score",
-                0
-            )
-        ),
-        reverse=True
-    )
-
-    # --------------------------------------------------------
-    # CONTADORES
-    # --------------------------------------------------------
-
-    api_count = sum(
-        1
-        for source in SOURCES
-        if source["mode"] == "api"
-    )
-
-    portal_count = sum(
-        1
-        for source in SOURCES
-        if source["mode"] == "portal"
-        and (
-            not region
-            or source["region"] in (
-                region,
-                "Global"
-            )
-        )
-    )
-
-    return {
-        "ok": True,
-        "query": q,
-        "region": region,
-        "category": category,
-        "results": results,
-        "count": len(results),
-        "sources": len(SOURCES),
-        "api_sources": api_count,
-        "portal_count": portal_count,
-        "diagnostics": diagnostics,
-        "searched_at": today_utc().isoformat()
-    }
+            if deadline_date < ..
 
 
 # ============================================================
