@@ -826,14 +826,13 @@ def classify_result(text):
 # CONSTRUÇÃO DA PESQUISA TED
 # ============================================================
 
-def build_ted_query(term):
+def build_ted_query(term, country_code=None):
 
     term = clean_query(
         term
     )
 
     if not term:
-
         term = "archaeology"
 
     if term.lower() in {
@@ -855,15 +854,33 @@ def build_ted_query(term):
                     f'FT~"{cleaned}"'
                 )
 
-        return (
+        query = (
             "("
             + " OR ".join(clauses)
-            + ") SORT BY publication-date DESC"
+            + ")"
+        )
+
+    else:
+
+        query = f'FT~"{term}"'
+
+    # --------------------------------------------------------
+    # FILTRO POR PAÍS
+    # --------------------------------------------------------
+    # O TED utiliza buyer-country como campo de pesquisa.
+    # O código utilizado é o ISO-3.
+    # --------------------------------------------------------
+
+    if country_code:
+
+        query = (
+            f'({query}) AND '
+            f'buyer-country:{country_code}'
         )
 
     return (
-        f'FT~"{term}" '
-        f'SORT BY publication-date DESC'
+        query
+        + " SORT BY publication-date DESC"
     )
 
 
