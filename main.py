@@ -363,7 +363,7 @@ TED_FIELDS = [
     "notice-type",
     "deadline-date-lot",
     "deadline-receipt-request",
-    "deadline-receipt-tender",
+    "deadline-receipt-tender-date-lot",
     "description-proc",
     "description-lot"
 
@@ -727,10 +727,10 @@ def extract_deadline(notice):
 
         "deadline-date-lot",
         "deadline-receipt-request",
-        "deadline-receipt-tender",
+        "deadline-receipt-tender-date-lot",
         "deadlineDateLot",
         "deadlineReceiptRequest",
-        "deadlineReceiptTender"
+        "deadlineReceiptTenderDateLot"
 
     ]
 
@@ -838,6 +838,7 @@ def classify_result(
 # ============================================================
 # QUERY TED
 # ============================================================
+
 def build_ted_query(
     term,
     country_code=None
@@ -1075,6 +1076,7 @@ def notice_to_result(
 # ============================================================
 # PESQUISA TED
 # ============================================================
+
 def query_ted(
     term
 ):
@@ -1228,6 +1230,7 @@ def query_ted(
             last_error
 
     }
+
 
 # ============================================================
 # WORLD BANK
