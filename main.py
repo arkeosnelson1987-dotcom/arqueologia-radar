@@ -1834,7 +1834,7 @@ def get_sources():
 # ============================================================
 @app.get("/api/test-ted-country")
 def test_ted_country():
-    test_query = 'FT~"archaeology" AND buyer-country:ZAF SORT BY publication-date DESC'
+    test_query = 'FT~"archaeology" AND buyer-country:ZAF'
 
     payload = {
         "query": test_query,
