@@ -1832,6 +1832,37 @@ def get_sources():
 # ============================================================
 # ENDPOINT SEARCH
 # ============================================================
+@app.get("/api/test-ted-country")
+def test_ted_country():
+    test_query = 'FT~"archaeology" AND buyer-country:ZAF SORT BY publication-date DESC'
+
+    payload = {
+        "query": test_query,
+        "fields": TED_FIELDS,
+        "limit": 10
+    }
+
+    try:
+        response = requests.post(
+            TED_URL,
+            json=payload,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        return {
+            "ok": response.ok,
+            "status_code": response.status_code,
+            "query": test_query,
+            "response": response.json()
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "query": test_query,
+            "error": str(e)
+        }
+
 
 @app.get("/api/search")
 def search(
