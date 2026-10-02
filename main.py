@@ -844,16 +844,15 @@ def build_ted_query(
     country_code=None
 ):
 
-    term = clean_query(
-        term
-    )
+    term = clean_query(term)
 
     if not term:
-
         return ""
 
-    # No modo automático "archaeology",
-    # fazemos uma pesquisa alargada.
+    # ========================================================
+    # MODO AUTOMÁTICO DO RADAR
+    # ========================================================
+
     if term.lower() in (
         "archaeology",
         "arqueologia"
@@ -863,25 +862,53 @@ def build_ted_query(
 
         for item in DEFAULT_TERMS[:12]:
 
-            parts.append(
-                f'FT~"{item}"'
-            )
+            # TED aceita melhor os termos individuais
+            # sem aspas.
+            clean_item = clean_query(item)
 
-        query = " OR ".join(
-            parts
-        )
+            if " " in clean_item:
+                parts.append(
+                    f'FT~{clean_item}'
+                )
+            else:
+                parts.append(
+                    f'FT~{clean_item}'
+                )
+
+        query = " OR ".join(parts)
 
     else:
 
-        # Pesquisa literal do que o utilizador escreveu
-        query = f'FT~"{term}"'
+        # ====================================================
+        # PESQUISA DIRETA DO UTILIZADOR
+        # ====================================================
+
+        # Remover caracteres que podem interferir
+        # com a sintaxe do TED.
+        term = re.sub(
+            r'["\']',
+            '',
+            term
+        )
+
+        term = term.strip()
+
+        # Para uma pesquisa simples:
+        query = f"FT~{term}"
+
+    # ========================================================
+    # FILTRO DE PAÍS
+    # ========================================================
 
     if country_code:
 
         query += (
-            f" AND buyer-country:"
-            f"{country_code}"
+            f" AND buyer-country:{country_code}"
         )
+
+    # ========================================================
+    # ORDENAÇÃO
+    # ========================================================
 
     query += (
         " SORT BY publication-date DESC"
