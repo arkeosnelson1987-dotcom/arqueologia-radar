@@ -393,6 +393,7 @@ COUNTRY_MAP = {
     "SL": "Serra Leoa",
     "SO": "Somália",
     "SD": "Sudão",
+    "SS": "Sudão do Sul",
     "TZ": "Tanzânia",
     "TG": "Togo",
     "TN": "Tunísia",
@@ -502,7 +503,136 @@ def normalize_text(text):
     return text.lower()
 
 
+# ============================================================
+# MAPA ISO-3 TED
+# ============================================================
+
+ISO3_MAP = {
+
+    # África
+    "AGO": "Angola",
+    "DZA": "Argélia",
+    "BEN": "Benim",
+    "BWA": "Botswana",
+    "BFA": "Burkina Faso",
+    "BDI": "Burundi",
+    "CPV": "Cabo Verde",
+    "CMR": "Camarões",
+    "CAF": "República Centro-Africana",
+    "TCD": "Chade",
+    "COM": "Comores",
+    "COD": "República Democrática do Congo",
+    "COG": "Congo",
+    "CIV": "Costa do Marfim",
+    "DJI": "Djibouti",
+    "EGY": "Egito",
+    "GNQ": "Guiné Equatorial",
+    "ERI": "Eritreia",
+    "SWZ": "Eswatini",
+    "ETH": "Etiópia",
+    "GAB": "Gabão",
+    "GMB": "Gâmbia",
+    "GHA": "Gana",
+    "GIN": "Guiné",
+    "GNB": "Guiné-Bissau",
+    "KEN": "Quénia",
+    "LSO": "Lesoto",
+    "LBR": "Libéria",
+    "LBY": "Líbia",
+    "MDG": "Madagáscar",
+    "MWI": "Malawi",
+    "MLI": "Mali",
+    "MRT": "Mauritânia",
+    "MUS": "Maurícia",
+    "MAR": "Marrocos",
+    "MOZ": "Moçambique",
+    "NAM": "Namíbia",
+    "NER": "Níger",
+    "NGA": "Nigéria",
+    "RWA": "Ruanda",
+    "SEN": "Senegal",
+    "SLE": "Serra Leoa",
+    "SOM": "Somália",
+    "SDN": "Sudão",
+    "SSD": "Sudão do Sul",
+    "TZA": "Tanzânia",
+    "TGO": "Togo",
+    "TUN": "Tunísia",
+    "UGA": "Uganda",
+    "ZAF": "África do Sul",
+    "ZMB": "Zâmbia",
+    "ZWE": "Zimbabwe",
+
+    # Europa
+    "AUT": "Áustria",
+    "BEL": "Bélgica",
+    "BGR": "Bulgária",
+    "HRV": "Croácia",
+    "CYP": "Chipre",
+    "CZE": "Chéquia",
+    "DNK": "Dinamarca",
+    "EST": "Estónia",
+    "FIN": "Finlândia",
+    "FRA": "França",
+    "DEU": "Alemanha",
+    "GRC": "Grécia",
+    "HUN": "Hungria",
+    "IRL": "Irlanda",
+    "ITA": "Itália",
+    "LVA": "Letónia",
+    "LTU": "Lituânia",
+    "LUX": "Luxemburgo",
+    "MLT": "Malta",
+    "NLD": "Países Baixos",
+    "POL": "Polónia",
+    "PRT": "Portugal",
+    "ROU": "Roménia",
+    "SVK": "Eslováquia",
+    "SVN": "Eslovénia",
+    "ESP": "Espanha",
+    "SWE": "Suécia",
+    "ISL": "Islândia",
+    "LIE": "Liechtenstein",
+    "NOR": "Noruega",
+    "CHE": "Suíça",
+    "GBR": "Reino Unido",
+
+    # Américas
+    "USA": "Estados Unidos",
+    "CAN": "Canadá",
+    "MEX": "México",
+    "BRA": "Brasil",
+    "ARG": "Argentina",
+    "CHL": "Chile",
+    "COL": "Colômbia",
+    "PER": "Peru",
+    "URY": "Uruguai",
+    "PRY": "Paraguai",
+    "BOL": "Bolívia",
+    "ECU": "Equador",
+    "CRI": "Costa Rica",
+    "PAN": "Panamá",
+
+    # Médio Oriente / Ásia
+    "SAU": "Arábia Saudita",
+    "ARE": "Emirados Árabes Unidos",
+    "QAT": "Qatar",
+    "OMN": "Omã",
+    "ISR": "Israel",
+    "JOR": "Jordânia",
+    "LBN": "Líbano",
+    "TUR": "Turquia",
+    "IND": "Índia",
+    "CHN": "China",
+    "JPN": "Japão",
+    "KOR": "Coreia do Sul",
+    "AUS": "Austrália",
+    "NZL": "Nova Zelândia"
+}
+
+
 def extract_country(value):
+
     text = flatten(value)
 
     if not text:
@@ -510,130 +640,10 @@ def extract_country(value):
 
     upper = text.upper()
 
-    # Códigos ISO-3 utilizados pela TED
-    ISO3_MAP = {
-        # África
-        "AGO": "Angola",
-        "DZA": "Argélia",
-        "BEN": "Benim",
-        "BWA": "Botswana",
-        "BFA": "Burkina Faso",
-        "BDI": "Burundi",
-        "CPV": "Cabo Verde",
-        "CMR": "Camarões",
-        "CAF": "República Centro-Africana",
-        "TCD": "Chade",
-        "COM": "Comores",
-        "COD": "República Democrática do Congo",
-        "COG": "Congo",
-        "CIV": "Costa do Marfim",
-        "DJI": "Djibouti",
-        "EGY": "Egito",
-        "GNQ": "Guiné Equatorial",
-        "ERI": "Eritreia",
-        "SWZ": "Eswatini",
-        "ETH": "Etiópia",
-        "GAB": "Gabão",
-        "GMB": "Gâmbia",
-        "GHA": "Gana",
-        "GIN": "Guiné",
-        "GNB": "Guiné-Bissau",
-        "KEN": "Quénia",
-        "LSO": "Lesoto",
-        "LBR": "Libéria",
-        "LBY": "Líbia",
-        "MDG": "Madagáscar",
-        "MWI": "Malawi",
-        "MLI": "Mali",
-        "MRT": "Mauritânia",
-        "MUS": "Maurícia",
-        "MAR": "Marrocos",
-        "MOZ": "Moçambique",
-        "NAM": "Namíbia",
-        "NER": "Níger",
-        "NGA": "Nigéria",
-        "RWA": "Ruanda",
-        "SEN": "Senegal",
-        "SLE": "Serra Leoa",
-        "SOM": "Somália",
-        "SDN": "Sudão",
-        "SSD": "Sudão do Sul",
-        "TZA": "Tanzânia",
-        "TGO": "Togo",
-        "TUN": "Tunísia",
-        "UGA": "Uganda",
-        "ZAF": "África do Sul",
-        "ZMB": "Zâmbia",
-        "ZWE": "Zimbabwe",
+    # --------------------------------------------------------
+    # Primeiro: códigos ISO-3 utilizados pela TED
+    # --------------------------------------------------------
 
-        # Europa
-        "AUT": "Áustria",
-        "BEL": "Bélgica",
-        "BGR": "Bulgária",
-        "HRV": "Croácia",
-        "CYP": "Chipre",
-        "CZE": "Chéquia",
-        "DNK": "Dinamarca",
-        "EST": "Estónia",
-        "FIN": "Finlândia",
-        "FRA": "França",
-        "DEU": "Alemanha",
-        "GRC": "Grécia",
-        "HUN": "Hungria",
-        "IRL": "Irlanda",
-        "ITA": "Itália",
-        "LVA": "Letónia",
-        "LTU": "Lituânia",
-        "LUX": "Luxemburgo",
-        "MLT": "Malta",
-        "NLD": "Países Baixos",
-        "POL": "Polónia",
-        "PRT": "Portugal",
-        "ROU": "Roménia",
-        "SVK": "Eslováquia",
-        "SVN": "Eslovénia",
-        "ESP": "Espanha",
-        "SWE": "Suécia",
-        "ISL": "Islândia",
-        "LIE": "Liechtenstein",
-        "NOR": "Noruega",
-        "CHE": "Suíça",
-        "GBR": "Reino Unido",
-
-        # Américas
-        "USA": "Estados Unidos",
-        "CAN": "Canadá",
-        "MEX": "México",
-        "BRA": "Brasil",
-        "ARG": "Argentina",
-        "CHL": "Chile",
-        "COL": "Colômbia",
-        "PER": "Peru",
-        "URY": "Uruguai",
-        "PRY": "Paraguai",
-        "BOL": "Bolívia",
-        "ECU": "Equador",
-        "CRI": "Costa Rica",
-        "PAN": "Panamá",
-
-        # Médio Oriente / Ásia
-        "SAU": "Arábia Saudita",
-        "ARE": "Emirados Árabes Unidos",
-        "QAT": "Qatar",
-        "OMN": "Omã",
-        "ISR": "Israel",
-        "JOR": "Jordânia",
-        "LBN": "Líbano",
-        "TUR": "Turquia",
-        "IND": "Índia",
-        "CHN": "China",
-        "JPN": "Japão",
-        "KOR": "Coreia do Sul",
-        "AUS": "Austrália",
-        "NZL": "Nova Zelândia"
-    }
-
-    # Primeiro procurar códigos ISO-3 da TED
     for code, country in ISO3_MAP.items():
 
         if re.search(
@@ -642,7 +652,10 @@ def extract_country(value):
         ):
             return country
 
-    # Depois procurar os códigos ISO-2 já existentes
+    # --------------------------------------------------------
+    # Segundo: códigos ISO-2 já existentes
+    # --------------------------------------------------------
+
     for code, country in COUNTRY_MAP.items():
 
         if re.search(
@@ -651,8 +664,13 @@ def extract_country(value):
         ):
             return country
 
-    # Finalmente procurar nomes dos países
-    normalized = normalize_text(text)
+    # --------------------------------------------------------
+    # Terceiro: nomes dos países
+    # --------------------------------------------------------
+
+    normalized = normalize_text(
+        text
+    )
 
     for country in COUNTRY_MAP.values():
 
@@ -668,6 +686,7 @@ def extract_country(value):
 
 
 def extract_cpvs(value):
+
     text = flatten(value)
 
     found = re.findall(
@@ -675,14 +694,12 @@ def extract_cpvs(value):
         text
     )
 
-    return sorted(set(found))
+    return sorted(
+        set(found)
+    )
 
 
 def extract_deadline(notice):
-    """
-    Tenta encontrar a data limite para apresentação
-    de propostas.
-    """
 
     values = [
         notice.get(
@@ -722,12 +739,14 @@ def parse_date(value):
     for fmt in formats:
 
         try:
+
             return datetime.strptime(
                 text[:26],
                 fmt
             ).date()
 
         except Exception:
+
             pass
 
     match = re.search(
@@ -738,6 +757,7 @@ def parse_date(value):
     if match:
 
         try:
+
             return date(
                 int(match.group(1)),
                 int(match.group(2)),
@@ -745,6 +765,7 @@ def parse_date(value):
             )
 
         except Exception:
+
             pass
 
     return None
@@ -752,7 +773,9 @@ def parse_date(value):
 
 def classify_result(text):
 
-    normalized = normalize_text(text)
+    normalized = normalize_text(
+        text
+    )
 
     archaeology_hits = 0
     major_hits = 0
@@ -760,14 +783,15 @@ def classify_result(text):
     for term in DEFAULT_TERMS:
 
         if normalize_text(term) in normalized:
+
             archaeology_hits += 1
 
     for term in MAJOR_PROJECT_TERMS:
 
         if normalize_text(term) in normalized:
+
             major_hits += 1
 
-    # Arqueologia diretamente identificada
     if archaeology_hits >= 1:
 
         score = min(
@@ -780,7 +804,6 @@ def classify_result(text):
             score
         )
 
-    # Grande projeto com potencial componente arqueológico
     if major_hits:
 
         score = min(
@@ -805,14 +828,14 @@ def classify_result(text):
 
 def build_ted_query(term):
 
-    term = clean_query(term)
+    term = clean_query(
+        term
+    )
 
     if not term:
+
         term = "archaeology"
 
-    # A pesquisa principal usa vários termos arqueológicos.
-    # O SORT BY permite que os resultados mais recentes
-    # apareçam primeiro.
     if term.lower() in {
         "archaeology",
         "arqueologia"
@@ -822,7 +845,9 @@ def build_ted_query(term):
 
         for item in DEFAULT_TERMS[:12]:
 
-            cleaned = clean_query(item)
+            cleaned = clean_query(
+                item
+            )
 
             if cleaned:
 
@@ -849,34 +874,44 @@ def build_ted_query(term):
 def notice_to_result(notice):
 
     publication_number = flatten(
-        notice.get("publication-number")
+        notice.get(
+            "publication-number"
+        )
     )
 
     publication_date = flatten(
-        notice.get("publication-date")
+        notice.get(
+            "publication-date"
+        )
     )
 
     pub_date = parse_date(
         publication_date
     )
 
-    # Não aceitar avisos demasiado antigos
     if pub_date and pub_date < cutoff_date():
+
         return None
 
     title = (
         flatten(
-            notice.get("notice-title")
+            notice.get(
+                "notice-title"
+            )
         )
         or "Concurso TED"
     )
 
     buyer = flatten(
-        notice.get("buyer-name")
+        notice.get(
+            "buyer-name"
+        )
     )
 
     country_raw = flatten(
-        notice.get("buyer-country")
+        notice.get(
+            "buyer-country"
+        )
     )
 
     country = extract_country(
@@ -884,7 +919,9 @@ def notice_to_result(notice):
     )
 
     cpv_raw = flatten(
-        notice.get("classification-cpv")
+        notice.get(
+            "classification-cpv"
+        )
     )
 
     cpvs = extract_cpvs(
@@ -896,15 +933,21 @@ def notice_to_result(notice):
     )
 
     notice_type = flatten(
-        notice.get("notice-type")
+        notice.get(
+            "notice-type"
+        )
     )
 
     description_proc = flatten(
-        notice.get("description-proc")
+        notice.get(
+            "description-proc"
+        )
     )
 
     description_lot = flatten(
-        notice.get("description-lot")
+        notice.get(
+            "description-lot"
+        )
     )
 
     searchable_text = " ".join(
@@ -923,7 +966,6 @@ def notice_to_result(notice):
         searchable_text
     )
 
-    # Se houver CPV arqueológico, reforçar classificação
     if any(
         cpv in ARCHAEOLOGY_CPVS
         for cpv in cpvs
@@ -1005,6 +1047,7 @@ def query_ted(term):
     }
 
     last_error = None
+    data = {}
 
     for attempt in range(3):
 
@@ -1065,10 +1108,8 @@ def query_ted(term):
 
     if isinstance(data, dict):
 
-        diagnostics["ted_total"] = (
-            data.get(
-                "totalNoticeCount"
-            )
+        diagnostics["ted_total"] = data.get(
+            "totalNoticeCount"
         )
 
     notices = []
@@ -1120,6 +1161,7 @@ def query_ted(term):
                         break
 
                 if notices:
+
                     break
 
     elif isinstance(
@@ -1281,6 +1323,7 @@ def query_world_bank(term):
                         break
 
                 if notices:
+
                     break
 
     diagnostics["raw_count"] = len(
@@ -1349,7 +1392,9 @@ def query_world_bank(term):
 
         identifier = (
             flatten(
-                notice.get("id")
+                notice.get(
+                    "id"
+                )
             )
             or flatten(
                 notice.get(
@@ -1373,7 +1418,9 @@ def query_world_bank(term):
         )
 
         url = flatten(
-            notice.get("url")
+            notice.get(
+                "url"
+            )
         )
 
         if not url:
@@ -1434,13 +1481,22 @@ def deduplicate_results(results):
 
         key = (
             normalize_text(
-                result.get("title", "")
+                result.get(
+                    "title",
+                    ""
+                )
             ),
             normalize_text(
-                result.get("source", "")
+                result.get(
+                    "source",
+                    ""
+                )
             ),
             normalize_text(
-                result.get("country", "")
+                result.get(
+                    "country",
+                    ""
+                )
             )
         )
 
@@ -1452,7 +1508,10 @@ def deduplicate_results(results):
 
             old = unique[key]
 
-            if result.get("score", 0) > old.get(
+            if result.get(
+                "score",
+                0
+            ) > old.get(
                 "score",
                 0
             ):
@@ -1471,17 +1530,21 @@ def deduplicate_results(results):
 def region_matches(result, region):
 
     if not region:
+
         return True
 
-    # Normalizar o nome da região
-    region_text = str(region or "").strip()
+    region_text = str(
+        region or ""
+    ).strip()
 
-    # Aceitar também a forma corrompida que apareceu
-    # no teste HTTP: Ãfrica
+    # Corrigir formas de codificação
+    # que já apareceram nos testes.
     if region_text in (
         "Ãfrica",
-        "ÃƒÂfrica"
+        "ÃƒÂfrica",
+        "ÃÂfrica"
     ):
+
         region_text = "África"
 
     region_normalized = normalize_text(
@@ -1489,7 +1552,10 @@ def region_matches(result, region):
     )
 
     country = normalize_text(
-        result.get("country", "")
+        result.get(
+            "country",
+            ""
+        )
     )
 
     # --------------------------------------------------------
@@ -1499,13 +1565,58 @@ def region_matches(result, region):
     if region_normalized == "europa":
 
         european_names = [
-            normalize_text(v)
-            for v in COUNTRY_MAP.values()
+            normalize_text(
+                value
+            )
+            for value in ISO3_MAP.values()
+            if value in [
+                "Áustria",
+                "Bélgica",
+                "Bulgária",
+                "Croácia",
+                "Chipre",
+                "Chéquia",
+                "Dinamarca",
+                "Estónia",
+                "Finlândia",
+                "França",
+                "Alemanha",
+                "Grécia",
+                "Hungria",
+                "Irlanda",
+                "Itália",
+                "Letónia",
+                "Lituânia",
+                "Luxemburgo",
+                "Malta",
+                "Países Baixos",
+                "Polónia",
+                "Portugal",
+                "Roménia",
+                "Eslováquia",
+                "Eslovénia",
+                "Espanha",
+                "Suécia",
+                "Islândia",
+                "Liechtenstein",
+                "Noruega",
+                "Suíça",
+                "Reino Unido"
+            ]
         ]
+
+        european_names.extend(
+            normalize_text(
+                value
+            )
+            for value in COUNTRY_MAP.values()
+        )
 
         return any(
             name in country
-            for name in european_names
+            for name in set(
+                european_names
+            )
         )
 
     # --------------------------------------------------------
@@ -1531,6 +1642,7 @@ def region_matches(result, region):
             "costa do marfim",
             "djibouti",
             "egito",
+            "guine equatorial",
             "eritrea",
             "eswatini",
             "etiopia",
@@ -1539,7 +1651,6 @@ def region_matches(result, region):
             "gana",
             "guine",
             "guine bissau",
-            "guine equatorial",
             "quenia",
             "lesoto",
             "liberia",
@@ -1614,7 +1725,10 @@ def region_matches(result, region):
 
     if region_normalized == "portugal":
 
-        return "portugal" in country
+        return (
+            "portugal"
+            in country
+        )
 
     # --------------------------------------------------------
     # ESPANHA
@@ -1731,8 +1845,6 @@ def search(
         "archaeological assessment"
     ]
 
-    # Se o utilizador pesquisar algo específico,
-    # colocamos esse termo no início.
     if q:
 
         user_query = clean_query(
@@ -1749,7 +1861,6 @@ def search(
                 user_query
             )
 
-    # Evitar duplicados
     clean_terms = []
 
     for term in search_terms:
