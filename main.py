@@ -430,10 +430,16 @@ TED_FIELDS = [
     "buyer-country",
     "classification-cpv",
     "notice-type",
+
+    # PRAZO PRINCIPAL
+    "deadline",
+
+    # PRAZOS ESPECÍFICOS
     "deadline-date-lot",
     "deadline-receipt-request",
     "deadline-receipt-tender-date-lot",
     "deadline-receipt-tender-time-lot",
+
     "description-proc",
     "description-lot"
 
@@ -722,9 +728,77 @@ def normalize_text(value):
 # LIMPEZA DOS TÍTULOS TED
 # ============================================================
 
+def choose_multilingual_text(value):
+
+    """
+    Quando o TED devolve um campo multilingue como dicionário,
+    escolhe primeiro o inglês e depois outras línguas disponíveis.
+    """
+
+    if value is None:
+        return ""
+
+    if isinstance(value, dict):
+
+        preferred_keys = [
+            "eng",
+            "en",
+            "por",
+            "pt",
+            "fra",
+            "fr",
+            "spa",
+            "es"
+        ]
+
+        for key in preferred_keys:
+
+            if key in value:
+
+                selected = choose_multilingual_text(
+                    value.get(key)
+                )
+
+                if selected:
+                    return selected
+
+        for item in value.values():
+
+            selected = choose_multilingual_text(
+                item
+            )
+
+            if selected:
+                return selected
+
+        return ""
+
+    if isinstance(value, list):
+
+        for item in value:
+
+            selected = choose_multilingual_text(
+                item
+            )
+
+            if selected:
+                return selected
+
+        return ""
+
+    return str(value)
+
+
 def clean_ted_title(title):
 
-    title = flatten(title)
+    # --------------------------------------------------------
+    # 1. Se o TED devolver estrutura multilingue,
+    #    escolher uma língua individual.
+    # --------------------------------------------------------
+
+    title = choose_multilingual_text(
+        title
+    )
 
     title = repair_mojibake(
         title
@@ -740,19 +814,178 @@ def clean_ted_title(title):
         title
     ).strip()
 
+    if not title:
+        return ""
+
+    # --------------------------------------------------------
+    # 2. O TED pode devolver uma cadeia contendo todas
+    #    as traduções consecutivamente.
+    #
+    #    Exemplo:
+    #
+    #    França – ... – Fouilles archéologiques ...
+    #    France – ... – Fouilles archéologiques ...
+    #
+    #    Nesse caso procuramos partes repetidas.
+    # --------------------------------------------------------
+
     parts = re.split(
-        r"\s+-\s+",
+        r"\s+–\s+|\s+-\s+",
         title
     )
 
-    if len(parts) >= 4:
+    parts = [
+        part.strip()
+        for part in parts
+        if part.strip()
+    ]
 
-        title = " - ".join(
-            parts[:3]
+    if len(parts) >= 6:
+
+        candidates = []
+
+        for part in parts:
+
+            clean_part = re.sub(
+                r"\s+",
+                " ",
+                part
+            ).strip()
+
+            if len(clean_part) < 12:
+                continue
+
+            candidates.append(
+                clean_part
+            )
+
+        # ----------------------------------------------------
+        # Procurar partes que aparecem várias vezes.
+        # Normalmente é o verdadeiro título do concurso.
+        # ----------------------------------------------------
+
+        repetitions = {}
+
+        for candidate in candidates:
+
+            normalized = normalize_text(
+                candidate
+            )
+
+            repetitions.setdefault(
+                normalized,
+                {
+                    "count": 0,
+                    "text": candidate
+                }
+            )
+
+            repetitions[
+                normalized
+            ]["count"] += 1
+
+        repeated = [
+
+            item
+
+            for item in repetitions.values()
+
+            if item["count"] >= 2
+
+        ]
+
+        if repeated:
+
+            repeated.sort(
+
+                key=lambda item: (
+                    item["count"],
+                    len(item["text"])
+                ),
+
+                reverse=True
+
+            )
+
+            selected = repeated[0]["text"]
+
+            # Evitar escolher apenas o nome genérico
+            # "Archaeological services" quando existe
+            # um título mais específico.
+
+            generic_titles = {
+
+                "archaeological services",
+                "servicios arqueologicos",
+                "services archeologiques",
+                "servizi archeologici",
+                "servicos arqueologicos",
+                "servicos de arheologie",
+                "servicii de arheologie",
+                "archaeologische untersuchungen",
+                "archeologische diensten",
+                "arheologisk services",
+                "arkeologiska tjanster",
+                "uslugi archeologiczne",
+                "arheologicke sluzby",
+                "archaeological service"
+
+            }
+
+            if normalize_text(
+                selected
+            ) not in generic_titles:
+
+                return selected
+
+            # Se o primeiro resultado repetido for genérico,
+            # procurar outro título repetido mais específico.
+
+            for item in repeated[1:]:
+
+                candidate = item["text"]
+
+                if normalize_text(
+                    candidate
+                ) not in generic_titles:
+
+                    return candidate
+
+            return selected
+
+    # --------------------------------------------------------
+    # 3. Fallback:
+    #    manter apenas os primeiros segmentos.
+    # --------------------------------------------------------
+
+    simple_parts = re.split(
+        r"\s+–\s+",
+        title
+    )
+
+    if len(simple_parts) >= 4:
+
+        # Procurar o primeiro segmento suficientemente
+        # comprido depois do nome do país/serviço.
+
+        for part in simple_parts:
+
+            part = part.strip()
+
+            if len(part) >= 25:
+
+                return part
+
+        return " – ".join(
+            simple_parts[:3]
         )
 
     return title
 
+
+# ============================================================
+# DATAS
+# ============================================================
 
 def parse_date(value):
 
@@ -865,7 +1098,9 @@ def find_date_in_structure(value):
             "deadline-date",
             "deadlineDate",
             "deadline-date-lot",
-            "deadlineDateLot"
+            "deadlineDateLot",
+            "deadline-receipt-tender-date-lot",
+            "deadlineReceiptTenderDateLot"
 
         ]
 
@@ -1084,19 +1319,30 @@ def extract_cpvs(notice):
 
 def extract_deadline(notice):
 
-    possible_fields = [
+    # --------------------------------------------------------
+    # PRIMEIRO:
+    # campo geral "deadline"
+    # --------------------------------------------------------
+
+    direct_deadline_fields = [
+
+        "deadline",
+        "deadlineDate",
+        "deadline-date",
 
         "deadline-date-lot",
+
         "deadline-receipt-tender-date-lot",
+
         "deadline-receipt-request",
 
-        "deadlineDateLot",
         "deadlineReceiptTenderDateLot",
+
         "deadlineReceiptRequest"
 
     ]
 
-    for field in possible_fields:
+    for field in direct_deadline_fields:
 
         value = notice.get(
             field
@@ -1109,7 +1355,14 @@ def extract_deadline(notice):
             )
 
             if found:
+
                 return found
+
+    # --------------------------------------------------------
+    # SEGUNDO:
+    # procurar qualquer campo cujo nome contenha
+    # deadline / tender-date / date-lot.
+    # --------------------------------------------------------
 
     for key, value in notice.items():
 
@@ -1133,6 +1386,7 @@ def extract_deadline(notice):
             )
 
             if found:
+
                 return found
 
     return ""
