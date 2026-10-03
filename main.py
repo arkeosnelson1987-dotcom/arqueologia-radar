@@ -379,7 +379,6 @@ NON_ARCHAEOLOGY_CPV_PREFIXES = {
     "900",
     "920",
     "980"
-
 }
 
 
@@ -612,6 +611,12 @@ def repair_mojibake(value):
     """
     Corrige texto UTF-8 que tenha sido interpretado
     incorretamente como Latin-1/Windows-1252.
+
+    Exemplo:
+
+    RomÃ©nia  -> Roménia
+    ServiÃ§os -> Serviços
+    ArchaeolÃ³gicos -> Arqueológicos
     """
 
     if value is None:
@@ -656,11 +661,6 @@ def repair_mojibake(value):
 
 
 def repair_structure(value):
-
-    """
-    Aplica a correção de codificação
-    recursivamente a listas e dicionários.
-    """
 
     if isinstance(value, str):
 
@@ -735,23 +735,10 @@ def normalize_text(value):
 
 def clean_ted_title(title):
 
-    """
-    O TED pode devolver o mesmo título em várias línguas,
-    criando títulos enormes.
-
-    Esta função tenta identificar a última versão
-    linguística do título e conservar apenas o texto
-    correspondente ao título original.
-
-    Se não conseguir identificar uma estrutura segura,
-    mantém o título completo.
-    """
-
-    if not title:
-        return ""
+    title = flatten(title)
 
     title = repair_mojibake(
-        str(title)
+        title
     )
 
     title = html.unescape(
@@ -764,169 +751,30 @@ def clean_ted_title(title):
         title
     ).strip()
 
-    # Separadores normalmente utilizados pelo TED
-    separators = [
-        " – ",
-        " — ",
-        " - "
-    ]
+    # TED pode devolver o título em várias línguas,
+    # separado por " - ".
+    #
+    # Exemplo:
+    #
+    # Roménia - Serviços arqueológicos - ...
+    # - Archaeological services - ...
+    #
+    # Neste caso mantemos apenas os primeiros blocos,
+    # evitando o título excessivamente comprido.
 
-    # Termos que indicam que estamos perante
-    # uma tradução da designação do procedimento.
-    markers = [
+    parts = re.split(
+        r"\s+-\s+",
+        title
+    )
 
-        "Archaeological services",
-        "Services archéologiques",
-        "Serviços arqueológicos",
-        "Servicios arqueológicos",
-        "Servizi archeologici",
-        "Servicii de arheologie",
-        "Archeologische diensten",
-        "Arkeologiska tjänster",
-        "Archäologische Untersuchungen",
-        "Archäologische Dienstleistungen",
-        "Archeologické služby",
-        "Arheološke usluge",
-        "Usługi archeologiczne",
-        "Arheoloģiskie pakalpojumi",
-        "Archeologijos paslaugos",
-        "Arheoloogilised teenused",
-        "Arkeologiset palvelut",
-        "Αρχαιολογικές υπηρεσίες",
-        "Услуги в областта на археологията"
+    if len(parts) >= 4:
 
-    ]
-
-    # --------------------------------------------------------
-    # Procurar todas as ocorrências dos marcadores
-    # --------------------------------------------------------
-
-    positions = []
-
-    lower_title = title.lower()
-
-    for marker in markers:
-
-        marker_lower = marker.lower()
-
-        start = 0
-
-        while True:
-
-            position = lower_title.find(
-                marker_lower,
-                start
-            )
-
-            if position == -1:
-                break
-
-            positions.append(
-                (
-                    position,
-                    marker
-                )
-            )
-
-            start = (
-                position
-                + len(marker)
-            )
-
-    # --------------------------------------------------------
-    # Se encontrarmos um marcador, tentar conservar
-    # o texto que vem depois dele.
-    # --------------------------------------------------------
-
-    if positions:
-
-        position, marker = max(
-            positions,
-            key=lambda item: item[0]
+        title = " - ".join(
+            parts[:3]
         )
-
-        remainder = title[
-            position + len(marker):
-        ].strip()
-
-        remainder = re.sub(
-            r"^\s*[–—-]\s*",
-            "",
-            remainder
-        ).strip()
-
-        if remainder:
-
-            # Evitar resultados absurdamente grandes.
-            # Se o texto restante parece ser novamente
-            # uma lista de traduções, conservar a última
-            # parte útil.
-            parts = re.split(
-                r"\s+[–—]\s+",
-                remainder
-            )
-
-            if len(parts) > 1:
-
-                last_part = parts[-1].strip()
-
-                if (
-                    len(last_part) >= 10
-                    and len(last_part) < len(remainder)
-                ):
-
-                    remainder = last_part
-
-            return remainder
-
-    # --------------------------------------------------------
-    # Segunda tentativa:
-    # muitos títulos TED estão simplesmente separados
-    # por " – ". Se houver muitas partes, conservar
-    # a parte mais informativa e não uma sequência inteira
-    # de traduções.
-    # --------------------------------------------------------
-
-    for separator in separators:
-
-        parts = [
-            part.strip()
-            for part in title.split(separator)
-            if part.strip()
-        ]
-
-        if len(parts) >= 4:
-
-            # Procurar uma parte que contenha palavras
-            # claramente arqueológicas.
-            archaeological_parts = [
-
-                part
-                for part in parts
-                if (
-                    "archaeolog"
-                    in part.lower()
-                    or "archéolog"
-                    in part.lower()
-                    or "arqueolog"
-                    in part.lower()
-                    or "archäolog"
-                    in part.lower()
-                )
-
-            ]
-
-            if archaeological_parts:
-
-                # Usar a última parte arqueológica encontrada.
-                return archaeological_parts[-1]
 
     return title
 
-
-# ============================================================
-# DATAS
-# ============================================================
 
 def parse_date(value):
 
@@ -967,7 +815,6 @@ def parse_date(value):
     if not value:
         return None
 
-    # ISO completo
     try:
 
         return datetime.fromisoformat(
@@ -980,7 +827,6 @@ def parse_date(value):
     except Exception:
         pass
 
-    # Procurar YYYY-MM-DD dentro de texto
     match = re.search(
         r"\d{4}-\d{2}-\d{2}",
         value
@@ -998,7 +844,6 @@ def parse_date(value):
         except Exception:
             pass
 
-    # YYYY-MM-DD
     try:
 
         return datetime.strptime(
@@ -1009,7 +854,6 @@ def parse_date(value):
     except Exception:
         pass
 
-    # DD/MM/YYYY
     try:
 
         return datetime.strptime(
@@ -1129,13 +973,21 @@ def extract_country(notice):
     if not value:
         return ""
 
+    upper = value.upper()
+
+    if upper in COUNTRY_NAMES_3:
+        return COUNTRY_NAMES_3[upper]
+
+    if upper in COUNTRY_NAMES:
+        return COUNTRY_NAMES[upper]
+
     # --------------------------------------------------------
-    # NOVO:
-    # corrigir códigos duplicados, por exemplo:
+    # Corrigir situações como:
     #
-    # DEU DEU -> DEU
-    # FRA FRA -> FRA
-    # PRT PRT -> PRT
+    # DEU DEU
+    # FRA FRA
+    # PRT PRT
+    #
     # --------------------------------------------------------
 
     parts = value.split()
@@ -1163,49 +1015,27 @@ def extract_country(notice):
 
         if len(unique_parts) == 1:
 
-            value = unique_parts[0]
+            unique_value = (
+                unique_parts[0]
+            )
 
-    upper = value.upper().strip()
+            unique_upper = (
+                unique_value.upper()
+            )
 
-    # --------------------------------------------------------
-    # Código ISO de 3 letras
-    # --------------------------------------------------------
+            if unique_upper in COUNTRY_NAMES_3:
 
-    if upper in COUNTRY_NAMES_3:
+                return COUNTRY_NAMES_3[
+                    unique_upper
+                ]
 
-        return COUNTRY_NAMES_3[
-            upper
-        ]
+            if unique_upper in COUNTRY_NAMES:
 
-    # --------------------------------------------------------
-    # Código ISO de 2 letras
-    # --------------------------------------------------------
+                return COUNTRY_NAMES[
+                    unique_upper
+                ]
 
-    if upper in COUNTRY_NAMES:
-
-        return COUNTRY_NAMES[
-            upper
-        ]
-
-    # --------------------------------------------------------
-    # Alguns sistemas podem devolver vários
-    # códigos separados por espaços.
-    # Procuramos qualquer código reconhecido.
-    # --------------------------------------------------------
-
-    for part in upper.split():
-
-        if part in COUNTRY_NAMES_3:
-
-            return COUNTRY_NAMES_3[
-                part
-            ]
-
-        if part in COUNTRY_NAMES:
-
-            return COUNTRY_NAMES[
-                part
-            ]
+            return unique_value
 
     return value
 
@@ -1313,7 +1143,7 @@ def extract_deadline(notice):
             if found:
                 return found
 
-    # 2. Procurar noutras estruturas TED
+    # 2. Procurar em outras estruturas TED
     for key, value in notice.items():
 
         key_normalized = (
@@ -1639,10 +1469,6 @@ def notice_to_result(
     notice
 ):
 
-    # --------------------------------------------------------
-    # Reparar estrutura recebida da API
-    # --------------------------------------------------------
-
     notice = repair_structure(
         notice
     )
@@ -1676,6 +1502,14 @@ def notice_to_result(
             "noticeTitle"
         )
         or ""
+    )
+
+    # ========================================================
+    # LIMPAR TÍTULO TED
+    # ========================================================
+
+    title = clean_ted_title(
+        title
     )
 
     buyer = (
@@ -1745,43 +1579,43 @@ def notice_to_result(
             )
         )
 
-    # --------------------------------------------------------
-    # NOVO:
-    # limpar título antes de devolver o resultado
-    # --------------------------------------------------------
-
-    cleaned_title = clean_ted_title(
-        flatten(title)
-    )
-
     return {
 
         "title":
-            cleaned_title,
+            title,
 
-        "buyer": flatten(
-            buyer
-        ),
+        "buyer":
+            flatten(
+                buyer
+            ),
 
-        "country": country,
+        "country":
+            country,
 
-        "date": flatten(
-            publication_date
-        ),
+        "date":
+            flatten(
+                publication_date
+            ),
 
-        "deadline": flatten(
-            deadline
-        ),
+        "deadline":
+            flatten(
+                deadline
+            ),
 
-        "cpv": cpvs,
+        "cpv":
+            cpvs,
 
-        "category": category,
+        "category":
+            category,
 
-        "score": score,
+        "score":
+            score,
 
-        "source": "TED",
+        "source":
+            "TED",
 
-        "url": url,
+        "url":
+            url,
 
         "publication_number":
             flatten(
