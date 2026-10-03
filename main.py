@@ -608,17 +608,6 @@ def flatten(value):
 
 def repair_mojibake(value):
 
-    """
-    Corrige texto UTF-8 que tenha sido interpretado
-    incorretamente como Latin-1/Windows-1252.
-
-    Exemplo:
-
-    RomÃ©nia  -> Roménia
-    ServiÃ§os -> Serviços
-    ArchaeolÃ³gicos -> Arqueológicos
-    """
-
     if value is None:
         return ""
 
@@ -750,17 +739,6 @@ def clean_ted_title(title):
         " ",
         title
     ).strip()
-
-    # TED pode devolver o título em várias línguas,
-    # separado por " - ".
-    #
-    # Exemplo:
-    #
-    # Roménia - Serviços arqueológicos - ...
-    # - Archaeological services - ...
-    #
-    # Neste caso mantemos apenas os primeiros blocos,
-    # evitando o título excessivamente comprido.
 
     parts = re.split(
         r"\s+-\s+",
@@ -981,15 +959,6 @@ def extract_country(notice):
     if upper in COUNTRY_NAMES:
         return COUNTRY_NAMES[upper]
 
-    # --------------------------------------------------------
-    # Corrigir situações como:
-    #
-    # DEU DEU
-    # FRA FRA
-    # PRT PRT
-    #
-    # --------------------------------------------------------
-
     parts = value.split()
 
     if len(parts) > 1:
@@ -1127,7 +1096,6 @@ def extract_deadline(notice):
 
     ]
 
-    # 1. Procurar diretamente nos campos conhecidos
     for field in possible_fields:
 
         value = notice.get(
@@ -1143,7 +1111,6 @@ def extract_deadline(notice):
             if found:
                 return found
 
-    # 2. Procurar em outras estruturas TED
     for key, value in notice.items():
 
         key_normalized = (
@@ -1233,10 +1200,6 @@ def classify_result(
         + description_text
     )
 
-    # --------------------------------------------------------
-    # 1. CPV arqueológico
-    # --------------------------------------------------------
-
     cpv_archaeology = any(
 
         cpv in ARCHAEOLOGY_CPVS
@@ -1264,10 +1227,6 @@ def classify_result(
             "Arqueologia direta",
             score
         )
-
-    # --------------------------------------------------------
-    # 2. Termo arqueológico explícito
-    # --------------------------------------------------------
 
     direct_hits = 0
 
@@ -1307,10 +1266,6 @@ def classify_result(
             score
         )
 
-    # --------------------------------------------------------
-    # 3. Património
-    # --------------------------------------------------------
-
     heritage_terms = [
 
         "cultural heritage",
@@ -1347,10 +1302,6 @@ def classify_result(
             score
         )
 
-    # --------------------------------------------------------
-    # 4. Grandes projetos
-    # --------------------------------------------------------
-
     major_hits = 0
 
     for term in MAJOR_PROJECT_TERMS:
@@ -1370,10 +1321,6 @@ def classify_result(
             "Grande projeto / potencial subcontratação",
             score
         )
-
-    # --------------------------------------------------------
-    # 5. Outro
-    # --------------------------------------------------------
 
     return (
         "Outro",
@@ -1396,10 +1343,6 @@ def build_ted_query(
 
     if not term:
         return ""
-
-    # ========================================================
-    # MODO AUTOMÁTICO
-    # ========================================================
 
     if term.lower() in (
         "archaeology",
@@ -1424,10 +1367,6 @@ def build_ted_query(
 
     else:
 
-        # ====================================================
-        # PESQUISA DIRETA
-        # ====================================================
-
         term = term.replace(
             '"',
             ''
@@ -1440,19 +1379,11 @@ def build_ted_query(
 
         query = f'FT~"{term}"'
 
-    # ========================================================
-    # PAÍS
-    # ========================================================
-
     if country_code:
 
         query += (
             f" AND buyer-country={country_code}"
         )
-
-    # ========================================================
-    # ORDENAÇÃO
-    # ========================================================
 
     query += (
         " SORT BY publication-date DESC"
@@ -1503,10 +1434,6 @@ def notice_to_result(
         )
         or ""
     )
-
-    # ========================================================
-    # LIMPAR TÍTULO TED
-    # ========================================================
 
     title = clean_ted_title(
         title
@@ -1956,11 +1883,19 @@ def query_world_bank(
                 []
             )
 
+            # ====================================================
+            # FILTRO WORLD BANK
+            #
+            # O World Bank devolve muitos projetos gerais.
+            # Só mantemos resultados com alguma relação
+            # identificável com arqueologia ou património.
+            # ====================================================
+
             if category == "Outro":
 
-    continue
+                continue
 
-results.append({
+            results.append({
 
                 "title":
                     flatten(title),
