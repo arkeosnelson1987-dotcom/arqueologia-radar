@@ -1956,7 +1956,11 @@ def query_world_bank(
                 []
             )
 
-            results.append({
+            if category == "Outro":
+
+    continue
+
+results.append({
 
                 "title":
                     flatten(title),
