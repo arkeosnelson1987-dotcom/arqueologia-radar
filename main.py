@@ -362,23 +362,24 @@ ARCHAEOLOGY_CPVS = {
 
 NON_ARCHAEOLOGY_CPV_PREFIXES = {
 
-    "720",      # IT
-    "480",      # Software
-    "500",      # Reparação/manutenção
-    "600",      # Transporte
-    "630",      # Serviços de transporte
-    "640",      # Telecomunicações
-    "650",      # Serviços públicos
-    "660",      # Serviços financeiros
-    "700",      # Imobiliário
-    "730",      # Investigação e desenvolvimento
-    "750",      # Administração pública
-    "790",      # Serviços empresariais
-    "800",      # Educação
-    "850",      # Saúde
-    "900",      # Serviços sociais
-    "920",      # Recreação
-    "980"       # Outros serviços
+    "720",
+    "480",
+    "500",
+    "600",
+    "630",
+    "640",
+    "650",
+    "660",
+    "700",
+    "730",
+    "750",
+    "790",
+    "800",
+    "850",
+    "900",
+    "920",
+    "980"
+
 }
 
 
@@ -611,12 +612,6 @@ def repair_mojibake(value):
     """
     Corrige texto UTF-8 que tenha sido interpretado
     incorretamente como Latin-1/Windows-1252.
-
-    Exemplo:
-
-    RomÃ©nia  -> Roménia
-    ServiÃ§os -> Serviços
-    ArchaeolÃ³gicos -> Arqueológicos
     """
 
     if value is None:
@@ -627,8 +622,6 @@ def repair_mojibake(value):
 
     text = value
 
-    # Só tentar reparar quando existem sinais claros
-    # de UTF-8 mal interpretado.
     suspicious = (
         "Ã" in text
         or "Â" in text
@@ -642,8 +635,6 @@ def repair_mojibake(value):
         or "Î" in text
         or "Ï" in text
         or "Ä" in text
-        or "Ä"
-        in text
     )
 
     if not suspicious:
@@ -738,6 +729,205 @@ def normalize_text(value):
     return value.lower()
 
 
+# ============================================================
+# LIMPEZA DOS TÍTULOS TED
+# ============================================================
+
+def clean_ted_title(title):
+
+    """
+    O TED pode devolver o mesmo título em várias línguas,
+    criando títulos enormes.
+
+    Esta função tenta identificar a última versão
+    linguística do título e conservar apenas o texto
+    correspondente ao título original.
+
+    Se não conseguir identificar uma estrutura segura,
+    mantém o título completo.
+    """
+
+    if not title:
+        return ""
+
+    title = repair_mojibake(
+        str(title)
+    )
+
+    title = html.unescape(
+        title
+    )
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        title
+    ).strip()
+
+    # Separadores normalmente utilizados pelo TED
+    separators = [
+        " – ",
+        " — ",
+        " - "
+    ]
+
+    # Termos que indicam que estamos perante
+    # uma tradução da designação do procedimento.
+    markers = [
+
+        "Archaeological services",
+        "Services archéologiques",
+        "Serviços arqueológicos",
+        "Servicios arqueológicos",
+        "Servizi archeologici",
+        "Servicii de arheologie",
+        "Archeologische diensten",
+        "Arkeologiska tjänster",
+        "Archäologische Untersuchungen",
+        "Archäologische Dienstleistungen",
+        "Archeologické služby",
+        "Arheološke usluge",
+        "Usługi archeologiczne",
+        "Arheoloģiskie pakalpojumi",
+        "Archeologijos paslaugos",
+        "Arheoloogilised teenused",
+        "Arkeologiset palvelut",
+        "Αρχαιολογικές υπηρεσίες",
+        "Услуги в областта на археологията"
+
+    ]
+
+    # --------------------------------------------------------
+    # Procurar todas as ocorrências dos marcadores
+    # --------------------------------------------------------
+
+    positions = []
+
+    lower_title = title.lower()
+
+    for marker in markers:
+
+        marker_lower = marker.lower()
+
+        start = 0
+
+        while True:
+
+            position = lower_title.find(
+                marker_lower,
+                start
+            )
+
+            if position == -1:
+                break
+
+            positions.append(
+                (
+                    position,
+                    marker
+                )
+            )
+
+            start = (
+                position
+                + len(marker)
+            )
+
+    # --------------------------------------------------------
+    # Se encontrarmos um marcador, tentar conservar
+    # o texto que vem depois dele.
+    # --------------------------------------------------------
+
+    if positions:
+
+        position, marker = max(
+            positions,
+            key=lambda item: item[0]
+        )
+
+        remainder = title[
+            position + len(marker):
+        ].strip()
+
+        remainder = re.sub(
+            r"^\s*[–—-]\s*",
+            "",
+            remainder
+        ).strip()
+
+        if remainder:
+
+            # Evitar resultados absurdamente grandes.
+            # Se o texto restante parece ser novamente
+            # uma lista de traduções, conservar a última
+            # parte útil.
+            parts = re.split(
+                r"\s+[–—]\s+",
+                remainder
+            )
+
+            if len(parts) > 1:
+
+                last_part = parts[-1].strip()
+
+                if (
+                    len(last_part) >= 10
+                    and len(last_part) < len(remainder)
+                ):
+
+                    remainder = last_part
+
+            return remainder
+
+    # --------------------------------------------------------
+    # Segunda tentativa:
+    # muitos títulos TED estão simplesmente separados
+    # por " – ". Se houver muitas partes, conservar
+    # a parte mais informativa e não uma sequência inteira
+    # de traduções.
+    # --------------------------------------------------------
+
+    for separator in separators:
+
+        parts = [
+            part.strip()
+            for part in title.split(separator)
+            if part.strip()
+        ]
+
+        if len(parts) >= 4:
+
+            # Procurar uma parte que contenha palavras
+            # claramente arqueológicas.
+            archaeological_parts = [
+
+                part
+                for part in parts
+                if (
+                    "archaeolog"
+                    in part.lower()
+                    or "archéolog"
+                    in part.lower()
+                    or "arqueolog"
+                    in part.lower()
+                    or "archäolog"
+                    in part.lower()
+                )
+
+            ]
+
+            if archaeological_parts:
+
+                # Usar a última parte arqueológica encontrada.
+                return archaeological_parts[-1]
+
+    return title
+
+
+# ============================================================
+# DATAS
+# ============================================================
+
 def parse_date(value):
 
     if not value:
@@ -748,7 +938,6 @@ def parse_date(value):
 
     if isinstance(value, dict):
 
-        # Procurar recursivamente uma data
         for item in value.values():
 
             result = parse_date(
@@ -845,8 +1034,6 @@ def find_date_in_structure(value):
 
     if isinstance(value, dict):
 
-        # Primeiro procurar chaves que normalmente
-        # representam datas.
         preferred_keys = [
 
             "date",
@@ -871,7 +1058,6 @@ def find_date_in_structure(value):
                 if found:
                     return found
 
-        # Depois procurar em toda a estrutura.
         for item in value.values():
 
             found = find_date_in_structure(
@@ -943,13 +1129,83 @@ def extract_country(notice):
     if not value:
         return ""
 
-    upper = value.upper()
+    # --------------------------------------------------------
+    # NOVO:
+    # corrigir códigos duplicados, por exemplo:
+    #
+    # DEU DEU -> DEU
+    # FRA FRA -> FRA
+    # PRT PRT -> PRT
+    # --------------------------------------------------------
+
+    parts = value.split()
+
+    if len(parts) > 1:
+
+        unique_parts = []
+
+        for part in parts:
+
+            clean_part = part.strip()
+
+            if (
+                clean_part
+                and clean_part.upper()
+                not in [
+                    existing.upper()
+                    for existing in unique_parts
+                ]
+            ):
+
+                unique_parts.append(
+                    clean_part
+                )
+
+        if len(unique_parts) == 1:
+
+            value = unique_parts[0]
+
+    upper = value.upper().strip()
+
+    # --------------------------------------------------------
+    # Código ISO de 3 letras
+    # --------------------------------------------------------
 
     if upper in COUNTRY_NAMES_3:
-        return COUNTRY_NAMES_3[upper]
+
+        return COUNTRY_NAMES_3[
+            upper
+        ]
+
+    # --------------------------------------------------------
+    # Código ISO de 2 letras
+    # --------------------------------------------------------
 
     if upper in COUNTRY_NAMES:
-        return COUNTRY_NAMES[upper]
+
+        return COUNTRY_NAMES[
+            upper
+        ]
+
+    # --------------------------------------------------------
+    # Alguns sistemas podem devolver vários
+    # códigos separados por espaços.
+    # Procuramos qualquer código reconhecido.
+    # --------------------------------------------------------
+
+    for part in upper.split():
+
+        if part in COUNTRY_NAMES_3:
+
+            return COUNTRY_NAMES_3[
+                part
+            ]
+
+        if part in COUNTRY_NAMES:
+
+            return COUNTRY_NAMES[
+                part
+            ]
 
     return value
 
@@ -1057,8 +1313,7 @@ def extract_deadline(notice):
             if found:
                 return found
 
-    # 2. Algumas versões/estruturas TED podem
-    # apresentar o prazo dentro de objetos.
+    # 2. Procurar noutras estruturas TED
     for key, value in notice.items():
 
         key_normalized = (
@@ -1180,7 +1435,6 @@ def classify_result(
             score
         )
 
-
     # --------------------------------------------------------
     # 2. Termo arqueológico explícito
     # --------------------------------------------------------
@@ -1193,10 +1447,6 @@ def classify_result(
 
             direct_hits += 1
 
-    # Se houver referência explícita à arqueologia,
-    # classificamos como direta, salvo CPV claramente
-    # incompatível e ausência de referência arqueológica
-    # no título.
     if direct_hits:
 
         score = min(
@@ -1204,8 +1454,6 @@ def classify_result(
             65 + direct_hits * 5
         )
 
-        # CPV informático/telecomunicações/etc.
-        # exige maior evidência no título.
         if is_non_archaeology_cpv(cpvs):
 
             title_has_archaeology = (
@@ -1228,7 +1476,6 @@ def classify_result(
             "Arqueologia direta",
             score
         )
-
 
     # --------------------------------------------------------
     # 3. Património
@@ -1270,7 +1517,6 @@ def classify_result(
             score
         )
 
-
     # --------------------------------------------------------
     # 4. Grandes projetos
     # --------------------------------------------------------
@@ -1294,7 +1540,6 @@ def classify_result(
             "Grande projeto / potencial subcontratação",
             score
         )
-
 
     # --------------------------------------------------------
     # 5. Outro
@@ -1500,11 +1745,19 @@ def notice_to_result(
             )
         )
 
+    # --------------------------------------------------------
+    # NOVO:
+    # limpar título antes de devolver o resultado
+    # --------------------------------------------------------
+
+    cleaned_title = clean_ted_title(
+        flatten(title)
+    )
+
     return {
 
-        "title": flatten(
-            title
-        ),
+        "title":
+            cleaned_title,
 
         "buyer": flatten(
             buyer
@@ -2181,7 +2434,6 @@ def search(
             user_query
         ]
 
-
     # --------------------------------------------------------
     # REMOVER TERMOS DUPLICADOS
     # --------------------------------------------------------
@@ -2199,7 +2451,6 @@ def search(
                 term
             )
 
-
     clean_world_bank_terms = []
 
     for term in world_bank_terms:
@@ -2212,7 +2463,6 @@ def search(
             clean_world_bank_terms.append(
                 term
             )
-
 
     # --------------------------------------------------------
     # EXECUÇÃO EM PARALELO
@@ -2241,7 +2491,6 @@ def search(
                     term
                 )
             )
-
 
         for future in as_completed(
             tasks
@@ -2279,7 +2528,6 @@ def search(
 
                 })
 
-
     # --------------------------------------------------------
     # DEDUPLICAÇÃO
     # --------------------------------------------------------
@@ -2287,7 +2535,6 @@ def search(
     results = deduplicate_results(
         results
     )
-
 
     # --------------------------------------------------------
     # FILTRO DE REGIÃO
@@ -2308,7 +2555,6 @@ def search(
 
         ]
 
-
     # --------------------------------------------------------
     # FILTRO DE CATEGORIA
     # --------------------------------------------------------
@@ -2327,7 +2573,6 @@ def search(
             == category
 
         ]
-
 
     # --------------------------------------------------------
     # REMOVER DEADLINES EXPIRADOS
@@ -2360,7 +2605,6 @@ def search(
 
     results = filtered_results
 
-
     # --------------------------------------------------------
     # ORDENAÇÃO
     # --------------------------------------------------------
@@ -2382,7 +2626,6 @@ def search(
 
         return date.min
 
-
     results.sort(
 
         key=lambda item: (
@@ -2400,7 +2643,6 @@ def search(
 
     )
 
-
     # --------------------------------------------------------
     # CONTADORES
     # --------------------------------------------------------
@@ -2415,7 +2657,6 @@ def search(
         == "api"
 
     )
-
 
     portal_count = sum(
 
@@ -2439,7 +2680,6 @@ def search(
         )
 
     )
-
 
     # --------------------------------------------------------
     # RESPOSTA
