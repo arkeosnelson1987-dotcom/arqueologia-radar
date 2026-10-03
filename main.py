@@ -1316,78 +1316,180 @@ def extract_cpvs(notice):
 # ============================================================
 # DEADLINE
 # ============================================================
-
 def extract_deadline(notice):
+    """
+    Extrai a data limite de apresentação de propostas do TED/eForms.
 
-    # --------------------------------------------------------
-    # PRIMEIRO:
-    # campo geral "deadline"
-    # --------------------------------------------------------
+    Prioridade:
+    1. BT-131 / TenderSubmissionDeadlinePeriod
+    2. deadline-date-lot
+    3. deadline-receipt-tender-date-lot
+    4. outros campos TED/eForms relacionados
+    """
 
-    direct_deadline_fields = [
+    if not isinstance(notice, (dict, list)):
+        return ""
 
-        "deadline",
-        "deadlineDate",
-        "deadline-date",
+    # ------------------------------------------------------------
+    # Procura recursivamente uma data dentro de uma estrutura.
+    # ------------------------------------------------------------
+    def find_date(value):
+        if value is None:
+            return ""
 
-        "deadline-date-lot",
+        if isinstance(value, str):
+            value = value.strip()
 
-        "deadline-receipt-tender-date-lot",
+            # ISO: 2026-10-27
+            match = re.search(
+                r"\b(20\d{2}-\d{2}-\d{2})(?:[T\s]|$)",
+                value
+            )
 
-        "deadline-receipt-request",
+            if match:
+                return match.group(1)
 
-        "deadlineReceiptTenderDateLot",
+            # Também aceita data ISO com offset:
+            # 2026-10-27+02:00
+            match = re.search(
+                r"\b(20\d{2}-\d{2}-\d{2})[+-]\d{2}:\d{2}\b",
+                value
+            )
 
-        "deadlineReceiptRequest"
+            if match:
+                return match.group(1)
 
+            return ""
+
+        if isinstance(value, dict):
+
+            # Primeiro procurar explicitamente EndDate,
+            # que é a estrutura oficial do BT-131.
+            priority_keys = [
+                "EndDate",
+                "endDate",
+                "end-date",
+                "deadline",
+                "deadlineDate",
+                "deadline-date",
+                "deadline-date-lot",
+                "deadline-receipt-tender-date-lot",
+                "deadlineReceiptTenderDateLot",
+            ]
+
+            for key in priority_keys:
+                if key in value:
+                    result = find_date(value[key])
+                    if result:
+                        return result
+
+            # Depois pesquisar recursivamente.
+            for key, item in value.items():
+                result = find_date(item)
+                if result:
+                    return result
+
+            return ""
+
+        if isinstance(value, list):
+            for item in value:
+                result = find_date(item)
+                if result:
+                    return result
+
+        return ""
+
+    # ------------------------------------------------------------
+    # 1. Estrutura oficial eForms:
+    #
+    # TenderSubmissionDeadlinePeriod
+    #     EndDate
+    #     EndTime
+    #
+    # ------------------------------------------------------------
+    deadline_structures = [
+        "TenderSubmissionDeadlinePeriod",
+        "tenderSubmissionDeadlinePeriod",
+        "tender-submission-deadline-period",
+        "TenderSubmissionDeadline",
+        "tenderSubmissionDeadline",
     ]
 
-    for field in direct_deadline_fields:
+    def search_named_structure(value):
 
-        value = notice.get(
-            field
-        )
+        if isinstance(value, dict):
 
-        if value:
+            for key in deadline_structures:
+                if key in value:
+                    result = find_date(value[key])
+                    if result:
+                        return result
 
-            found = find_date_in_structure(
-                value
-            )
+            for item in value.values():
+                result = search_named_structure(item)
+                if result:
+                    return result
 
-            if found:
+        elif isinstance(value, list):
 
-                return found
+            for item in value:
+                result = search_named_structure(item)
+                if result:
+                    return result
 
-    # --------------------------------------------------------
-    # SEGUNDO:
-    # procurar qualquer campo cujo nome contenha
-    # deadline / tender-date / date-lot.
-    # --------------------------------------------------------
+        return ""
 
-    for key, value in notice.items():
+    deadline = search_named_structure(notice)
 
-        key_normalized = (
-            str(key)
-            .lower()
-            .replace(
-                "_",
-                "-"
-            )
-        )
+    if deadline:
+        return deadline
 
-        if (
-            "deadline" in key_normalized
-            or "tender-date" in key_normalized
-            or "date-lot" in key_normalized
-        ):
+    # ------------------------------------------------------------
+    # 2. Campos TED/eForms conhecidos
+    # ------------------------------------------------------------
+    possible_fields = [
+        "deadline-date-lot",
+        "deadline-receipt-tender-date-lot",
+        "deadline-receipt-request",
+        "deadline-date",
+        "deadline",
+        "deadlineDate",
+        "deadlineDateLot",
+        "deadlineReceiptTenderDateLot",
+        "deadlineReceiptRequest",
+        "BT-131",
+        "BT-131-Lot",
+        "BT-131(d)-Lot",
+    ]
 
-            found = find_date_in_structure(
-                value
-            )
+    def search_fields(value):
 
-            if found:
+        if isinstance(value, dict):
 
-                return found
+            for key in possible_fields:
+                if key in value:
+                    result = find_date(value[key])
+                    if result:
+                        return result
+
+            for item in value.values():
+                result = search_fields(item)
+                if result:
+                    return result
+
+        elif isinstance(value, list):
+
+            for item in value:
+                result = search_fields(item)
+                if result:
+                    return result
+
+        return ""
+
+    deadline = search_fields(notice)
+
+    if deadline:
+        return deadline
 
     return ""
 
@@ -1586,64 +1688,77 @@ def classify_result(
 # QUERY TED
 # ============================================================
 
-def build_ted_query(
-    term,
-    country_code=None
-):
-
-    term = clean_query(
-        term
-    )
-
-    if not term:
+def clean_ted_title(title):
+    """
+    Limpa títulos TED/eForms que possam vir com várias versões linguísticas.
+    Mantém apenas uma versão curta e legível.
+    """
+    if title is None:
         return ""
 
-    if term.lower() in (
-        "archaeology",
-        "arqueologia"
-    ):
+    title = flatten(title)
+    title = repair_mojibake(title)
+    title = html.unescape(title)
+    title = re.sub(r"\s+", " ", title).strip()
 
-        parts = []
+    if not title:
+        return ""
 
-        for item in DEFAULT_TERMS[:12]:
+    # Separadores típicos usados quando o TED devolve várias versões
+    # linguísticas do mesmo título.
+    parts = re.split(r"\s+[–—-]\s+", title)
 
-            item = clean_query(
-                item
+    # Remove partes vazias
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if len(parts) <= 2:
+        return title
+
+    # Detecta blocos repetidos do tipo:
+    # País – Título
+    # País – Título
+    # País – Título
+    #
+    # Nestes casos ficamos com o último bloco, que normalmente
+    # corresponde à versão principal devolvida pelo TED.
+    country_title_candidates = []
+
+    for i in range(0, len(parts) - 1, 2):
+        country = parts[i].strip()
+        subject = parts[i + 1].strip()
+
+        if (
+            len(country) <= 80
+            and len(subject) >= 3
+            and not re.search(r"\b(202[0-9]|20[0-9]{2})\b", country)
+        ):
+            country_title_candidates.append(
+                f"{country} – {subject}"
             )
 
-            parts.append(
-                f'FT~"{item}"'
-            )
+    if country_title_candidates:
+        # Preferimos a última versão linguística.
+        candidate = country_title_candidates[-1]
 
-        query = " OR ".join(
-            parts
-        )
+        if len(candidate) <= 220:
+            return candidate
 
-    else:
+    # Caso o título não siga o padrão País – Título,
+    # procurar blocos repetidos e conservar o último segmento
+    # suficientemente informativo.
+    long_parts = [p for p in parts if len(p) >= 10]
 
-        term = term.replace(
-            '"',
-            ''
-        )
+    if long_parts:
+        candidate = long_parts[-1]
 
-        term = term.replace(
-            "'",
-            ''
-        )
+        if len(candidate) <= 220:
+            return candidate
 
-        query = f'FT~"{term}"'
+    # Última salvaguarda: limite de tamanho sem cortar no meio
+    if len(title) > 220:
+        return title[:217].rstrip() + "..."
 
-    if country_code:
-
-        query += (
-            f" AND buyer-country={country_code}"
-        )
-
-    query += (
-        " SORT BY publication-date DESC"
-    )
-
-    return query
+    return title
 
 
 # ============================================================
