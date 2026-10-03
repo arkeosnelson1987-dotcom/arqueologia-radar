@@ -32,7 +32,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 PERIOD_DAYS = 365
 PAGE_SIZE = 100
 REQUEST_TIMEOUT = 30
@@ -298,6 +297,50 @@ DEFAULT_TERMS = [
 
 
 # ============================================================
+# TERMOS DE ARQUEOLOGIA DIRETA
+# ============================================================
+
+DIRECT_ARCHAEOLOGY_TERMS = [
+
+    "archaeology",
+    "archaeological",
+    "archaeologic",
+    "archaeological monitoring",
+    "archaeological excavation",
+    "archaeological services",
+    "archaeological survey",
+    "archaeological assessment",
+    "archaeological investigation",
+    "archaeological works",
+    "archaeological study",
+    "archaeological studies",
+    "archaeological research",
+    "archaeological watching brief",
+    "archaeological watching",
+    "archaeological evaluation",
+    "archaeological impact assessment",
+    "archaeological fieldwork",
+    "archaeological supervision",
+    "archaeological consultancy",
+    "archaeological consultant",
+    "archaeologist",
+    "archaeologists",
+    "archéologie",
+    "archéologique",
+    "arqueologia",
+    "arqueológico",
+    "arqueológica",
+    "arqueológicos",
+    "arqueológicas",
+    "serviços de arqueologia",
+    "servicos de arqueologia",
+    "escavação arqueológica",
+    "escavacao arqueologica"
+
+]
+
+
+# ============================================================
 # CPV DE ARQUEOLOGIA
 # ============================================================
 
@@ -310,6 +353,32 @@ ARCHAEOLOGY_CPVS = {
     "71351811",
     "45112450"
 
+}
+
+
+# ============================================================
+# CPV DE SERVIÇOS NÃO ARQUEOLÓGICOS
+# ============================================================
+
+NON_ARCHAEOLOGY_CPV_PREFIXES = {
+
+    "720",      # IT
+    "480",      # Software
+    "500",      # Reparação/manutenção
+    "600",      # Transporte
+    "630",      # Serviços de transporte
+    "640",      # Telecomunicações
+    "650",      # Serviços públicos
+    "660",      # Serviços financeiros
+    "700",      # Imobiliário
+    "730",      # Investigação e desenvolvimento
+    "750",      # Administração pública
+    "790",      # Serviços empresariais
+    "800",      # Educação
+    "850",      # Saúde
+    "900",      # Serviços sociais
+    "920",      # Recreação
+    "980"       # Outros serviços
 }
 
 
@@ -364,6 +433,7 @@ TED_FIELDS = [
     "deadline-date-lot",
     "deadline-receipt-request",
     "deadline-receipt-tender-date-lot",
+    "deadline-receipt-tender-time-lot",
     "description-proc",
     "description-lot"
 
@@ -532,6 +602,98 @@ def flatten(value):
     return str(value)
 
 
+# ============================================================
+# CORREÇÃO DE CODIFICAÇÃO
+# ============================================================
+
+def repair_mojibake(value):
+
+    """
+    Corrige texto UTF-8 que tenha sido interpretado
+    incorretamente como Latin-1/Windows-1252.
+
+    Exemplo:
+
+    RomÃ©nia  -> Roménia
+    ServiÃ§os -> Serviços
+    ArchaeolÃ³gicos -> Arqueológicos
+    """
+
+    if value is None:
+        return ""
+
+    if not isinstance(value, str):
+        return value
+
+    text = value
+
+    # Só tentar reparar quando existem sinais claros
+    # de UTF-8 mal interpretado.
+    suspicious = (
+        "Ã" in text
+        or "Â" in text
+        or "â€" in text
+        or "â€“" in text
+        or "â€”" in text
+        or "â€™" in text
+        or "Å" in text
+        or "Ð" in text
+        or "Ñ" in text
+        or "Î" in text
+        or "Ï" in text
+        or "Ä" in text
+        or "Ä"
+        in text
+    )
+
+    if not suspicious:
+        return text
+
+    try:
+
+        repaired = text.encode(
+            "latin1"
+        ).decode(
+            "utf-8"
+        )
+
+        return repaired
+
+    except Exception:
+
+        return text
+
+
+def repair_structure(value):
+
+    """
+    Aplica a correção de codificação
+    recursivamente a listas e dicionários.
+    """
+
+    if isinstance(value, str):
+
+        return repair_mojibake(
+            value
+        )
+
+    if isinstance(value, list):
+
+        return [
+            repair_structure(item)
+            for item in value
+        ]
+
+    if isinstance(value, dict):
+
+        return {
+            key: repair_structure(item)
+            for key, item in value.items()
+        }
+
+    return value
+
+
 def clean_query(value):
 
     if value is None:
@@ -552,7 +714,13 @@ def normalize_text(value):
 
     value = flatten(value)
 
-    value = html.unescape(value)
+    value = repair_mojibake(
+        value
+    )
+
+    value = html.unescape(
+        value
+    )
 
     value = unicodedata.normalize(
         "NFKD",
@@ -562,7 +730,9 @@ def normalize_text(value):
     value = "".join(
         char
         for char in value
-        if not unicodedata.combining(char)
+        if not unicodedata.combining(
+            char
+        )
     )
 
     return value.lower()
@@ -576,12 +746,39 @@ def parse_date(value):
     if isinstance(value, date):
         return value
 
+    if isinstance(value, dict):
+
+        # Procurar recursivamente uma data
+        for item in value.values():
+
+            result = parse_date(
+                item
+            )
+
+            if result:
+                return result
+
+        return None
+
+    if isinstance(value, list):
+
+        for item in value:
+
+            result = parse_date(
+                item
+            )
+
+            if result:
+                return result
+
+        return None
+
     value = str(value).strip()
 
     if not value:
         return None
 
-    # ISO
+    # ISO completo
     try:
 
         return datetime.fromisoformat(
@@ -593,6 +790,24 @@ def parse_date(value):
 
     except Exception:
         pass
+
+    # Procurar YYYY-MM-DD dentro de texto
+    match = re.search(
+        r"\d{4}-\d{2}-\d{2}",
+        value
+    )
+
+    if match:
+
+        try:
+
+            return datetime.strptime(
+                match.group(0),
+                "%Y-%m-%d"
+            ).date()
+
+        except Exception:
+            pass
 
     # YYYY-MM-DD
     try:
@@ -620,6 +835,91 @@ def parse_date(value):
 
 
 # ============================================================
+# EXTRAIR DATA DE ESTRUTURAS TED
+# ============================================================
+
+def find_date_in_structure(value):
+
+    if value is None:
+        return ""
+
+    if isinstance(value, dict):
+
+        # Primeiro procurar chaves que normalmente
+        # representam datas.
+        preferred_keys = [
+
+            "date",
+            "value",
+            "date-value",
+            "deadline",
+            "deadline-date",
+            "deadlineDate",
+            "deadline-date-lot",
+            "deadlineDateLot"
+
+        ]
+
+        for key in preferred_keys:
+
+            if key in value:
+
+                found = find_date_in_structure(
+                    value.get(key)
+                )
+
+                if found:
+                    return found
+
+        # Depois procurar em toda a estrutura.
+        for item in value.values():
+
+            found = find_date_in_structure(
+                item
+            )
+
+            if found:
+                return found
+
+        return ""
+
+    if isinstance(value, list):
+
+        for item in value:
+
+            found = find_date_in_structure(
+                item
+            )
+
+            if found:
+                return found
+
+        return ""
+
+    text = str(value)
+
+    match = re.search(
+        r"\d{4}-\d{2}-\d{2}",
+        text
+    )
+
+    if match:
+
+        return match.group(0)
+
+    match = re.search(
+        r"\d{2}/\d{2}/\d{4}",
+        text
+    )
+
+    if match:
+
+        return match.group(0)
+
+    return ""
+
+
+# ============================================================
 # PAÍS
 # ============================================================
 
@@ -632,7 +932,13 @@ def extract_country(notice):
         or ""
     )
 
-    value = flatten(value).strip()
+    value = flatten(
+        value
+    ).strip()
+
+    value = repair_mojibake(
+        value
+    )
 
     if not value:
         return ""
@@ -726,14 +1032,16 @@ def extract_deadline(notice):
     possible_fields = [
 
         "deadline-date-lot",
-        "deadline-receipt-request",
         "deadline-receipt-tender-date-lot",
+        "deadline-receipt-request",
+
         "deadlineDateLot",
-        "deadlineReceiptRequest",
-        "deadlineReceiptTenderDateLot"
+        "deadlineReceiptTenderDateLot",
+        "deadlineReceiptRequest"
 
     ]
 
+    # 1. Procurar diretamente nos campos conhecidos
     for field in possible_fields:
 
         value = notice.get(
@@ -742,16 +1050,38 @@ def extract_deadline(notice):
 
         if value:
 
-            if isinstance(
-                value,
-                list
-            ):
-
-                value = value[0]
-
-            return flatten(
+            found = find_date_in_structure(
                 value
             )
+
+            if found:
+                return found
+
+    # 2. Algumas versões/estruturas TED podem
+    # apresentar o prazo dentro de objetos.
+    for key, value in notice.items():
+
+        key_normalized = (
+            str(key)
+            .lower()
+            .replace(
+                "_",
+                "-"
+            )
+        )
+
+        if (
+            "deadline" in key_normalized
+            or "tender-date" in key_normalized
+            or "date-lot" in key_normalized
+        ):
+
+            found = find_date_in_structure(
+                value
+            )
+
+            if found:
+                return found
 
     return ""
 
@@ -760,49 +1090,89 @@ def extract_deadline(notice):
 # CLASSIFICAÇÃO
 # ============================================================
 
+def has_direct_archaeology_term(
+    text
+):
+
+    normalized = normalize_text(
+        text
+    )
+
+    for term in DIRECT_ARCHAEOLOGY_TERMS:
+
+        term_normalized = normalize_text(
+            term
+        )
+
+        if term_normalized in normalized:
+
+            return True
+
+    return False
+
+
+def is_non_archaeology_cpv(
+    cpvs
+):
+
+    for cpv in cpvs:
+
+        cpv = str(cpv)
+
+        if len(cpv) >= 3:
+
+            if cpv[:3] in NON_ARCHAEOLOGY_CPV_PREFIXES:
+
+                return True
+
+    return False
+
+
 def classify_result(
     title,
     description,
     cpvs
 ):
 
-    text = normalize_text(
-        " ".join(
-            [
-                flatten(title),
-                flatten(description)
-            ]
-        )
+    title_text = normalize_text(
+        title
     )
 
-    archaeology_hits = 0
+    description_text = normalize_text(
+        description
+    )
 
-    for term in DEFAULT_TERMS:
+    combined_text = (
+        title_text
+        + " "
+        + description_text
+    )
 
-        if normalize_text(term) in text:
-
-            archaeology_hits += 1
-
-    major_hits = 0
-
-    for term in MAJOR_PROJECT_TERMS:
-
-        if normalize_text(term) in text:
-
-            major_hits += 1
+    # --------------------------------------------------------
+    # 1. CPV arqueológico
+    # --------------------------------------------------------
 
     cpv_archaeology = any(
+
         cpv in ARCHAEOLOGY_CPVS
+
         for cpv in cpvs
+
     )
 
-    if archaeology_hits >= 1:
+    if cpv_archaeology:
+
+        direct_hits = 0
+
+        for term in DIRECT_ARCHAEOLOGY_TERMS:
+
+            if normalize_text(term) in combined_text:
+
+                direct_hits += 1
 
         score = min(
             100,
-            60
-            + archaeology_hits * 5
-            + major_hits * 2
+            85 + direct_hits * 3
         )
 
         return (
@@ -810,17 +1180,113 @@ def classify_result(
             score
         )
 
-    if cpv_archaeology:
+
+    # --------------------------------------------------------
+    # 2. Termo arqueológico explícito
+    # --------------------------------------------------------
+
+    direct_hits = 0
+
+    for term in DIRECT_ARCHAEOLOGY_TERMS:
+
+        if normalize_text(term) in combined_text:
+
+            direct_hits += 1
+
+    # Se houver referência explícita à arqueologia,
+    # classificamos como direta, salvo CPV claramente
+    # incompatível e ausência de referência arqueológica
+    # no título.
+    if direct_hits:
+
+        score = min(
+            100,
+            65 + direct_hits * 5
+        )
+
+        # CPV informático/telecomunicações/etc.
+        # exige maior evidência no título.
+        if is_non_archaeology_cpv(cpvs):
+
+            title_has_archaeology = (
+                has_direct_archaeology_term(
+                    title_text
+                )
+            )
+
+            if not title_has_archaeology:
+
+                return (
+                    "Património / potencial arqueológico",
+                    min(
+                        55,
+                        score
+                    )
+                )
 
         return (
             "Arqueologia direta",
-            80
+            score
         )
+
+
+    # --------------------------------------------------------
+    # 3. Património
+    # --------------------------------------------------------
+
+    heritage_terms = [
+
+        "cultural heritage",
+        "heritage",
+        "historic environment",
+        "chance finds",
+        "heritage management",
+        "patrimonio cultural",
+        "patrimonio",
+        "património cultural",
+        "património",
+        "monument",
+        "unesco"
+
+    ]
+
+    heritage_hits = 0
+
+    for term in heritage_terms:
+
+        if normalize_text(term) in combined_text:
+
+            heritage_hits += 1
+
+    if heritage_hits:
+
+        score = min(
+            70,
+            35 + heritage_hits * 5
+        )
+
+        return (
+            "Património / potencial arqueológico",
+            score
+        )
+
+
+    # --------------------------------------------------------
+    # 4. Grandes projetos
+    # --------------------------------------------------------
+
+    major_hits = 0
+
+    for term in MAJOR_PROJECT_TERMS:
+
+        if normalize_text(term) in combined_text:
+
+            major_hits += 1
 
     if major_hits:
 
         score = min(
-            100,
+            65,
             25 + major_hits * 4
         )
 
@@ -828,6 +1294,11 @@ def classify_result(
             "Grande projeto / potencial subcontratação",
             score
         )
+
+
+    # --------------------------------------------------------
+    # 5. Outro
+    # --------------------------------------------------------
 
     return (
         "Outro",
@@ -844,7 +1315,9 @@ def build_ted_query(
     country_code=None
 ):
 
-    term = clean_query(term)
+    term = clean_query(
+        term
+    )
 
     if not term:
         return ""
@@ -862,13 +1335,17 @@ def build_ted_query(
 
         for item in DEFAULT_TERMS[:12]:
 
-            item = clean_query(item)
+            item = clean_query(
+                item
+            )
 
             parts.append(
                 f'FT~"{item}"'
             )
 
-        query = " OR ".join(parts)
+        query = " OR ".join(
+            parts
+        )
 
     else:
 
@@ -876,7 +1353,6 @@ def build_ted_query(
         # PESQUISA DIRETA
         # ====================================================
 
-        # Retirar aspas introduzidas pelo utilizador
         term = term.replace(
             '"',
             ''
@@ -887,8 +1363,6 @@ def build_ted_query(
             ''
         )
 
-        # O TED funciona melhor com a expressão
-        # entre aspas.
         query = f'FT~"{term}"'
 
     # ========================================================
@@ -919,6 +1393,14 @@ def build_ted_query(
 def notice_to_result(
     notice
 ):
+
+    # --------------------------------------------------------
+    # Reparar estrutura recebida da API
+    # --------------------------------------------------------
+
+    notice = repair_structure(
+        notice
+    )
 
     publication_date = (
         notice.get(
@@ -992,20 +1474,6 @@ def notice_to_result(
         cpvs
     )
 
-    if (
-        any(
-            cpv in ARCHAEOLOGY_CPVS
-            for cpv in cpvs
-        )
-        and score < 75
-    ):
-
-        category = (
-            "Arqueologia direta"
-        )
-
-        score = 75
-
     publication_number = (
         notice.get(
             "publication-number"
@@ -1027,7 +1495,9 @@ def notice_to_result(
         url = (
             "https://ted.europa.eu/"
             "en/notice/-/detail/"
-            + str(publication_number)
+            + str(
+                publication_number
+            )
         )
 
     return {
@@ -1119,30 +1589,36 @@ def query_ted(
                 timeout=REQUEST_TIMEOUT
             )
 
-            # =================================================
-            # DIAGNÓSTICO ESPECIAL PARA ERROS TED
-            # =================================================
-
             if response.status_code >= 400:
 
                 error_text = response.text
 
                 try:
-                    error_json = response.json()
+
+                    error_json = (
+                        response.json()
+                    )
+
                 except Exception:
+
                     error_json = None
 
                 return [], {
 
-                    "source": "TED",
+                    "source":
+                        "TED",
 
-                    "term": term,
+                    "term":
+                        term,
 
-                    "ok": False,
+                    "ok":
+                        False,
 
-                    "count": 0,
+                    "count":
+                        0,
 
-                    "query_sent": query,
+                    "query_sent":
+                        query,
 
                     "status_code":
                         response.status_code,
@@ -1156,6 +1632,10 @@ def query_ted(
                 }
 
             data = response.json()
+
+            data = repair_structure(
+                data
+            )
 
             notices = (
                 data.get(
@@ -1267,6 +1747,10 @@ def query_world_bank(
         response.raise_for_status()
 
         data = response.json()
+
+        data = repair_structure(
+            data
+        )
 
         results = []
 
@@ -1479,24 +1963,28 @@ def deduplicate_results(
     for result in results:
 
         key = (
+
             normalize_text(
                 result.get(
                     "title",
                     ""
                 )
             ),
+
             normalize_text(
                 result.get(
                     "buyer",
                     ""
                 )
             ),
+
             normalize_text(
                 result.get(
                     "country",
                     ""
                 )
             )
+
         )
 
         if key not in unique:
@@ -1505,7 +1993,6 @@ def deduplicate_results(
 
         else:
 
-            # Mantém o resultado com maior score
             if (
                 result.get(
                     "score",
@@ -1648,27 +2135,6 @@ def search(
 
     diagnostics = []
 
-    # --------------------------------------------------------
-    # PESQUISA
-    # --------------------------------------------------------
-    #
-    # "archaeology" = modo automático
-    #
-    # Qualquer outro termo é pesquisado
-    # diretamente, sem acrescentar automaticamente
-    # todos os termos de arqueologia.
-    #
-    # Exemplos:
-    #
-    # archaeology
-    # archaeological
-    # heritage
-    # excavation
-    # railway
-    # banana123456
-    #
-    # --------------------------------------------------------
-
     user_query = clean_query(
         q
     )
@@ -1706,23 +2172,6 @@ def search(
         ]
 
     else:
-
-        # ====================================================
-        # AQUI ESTÁ A CORREÇÃO PRINCIPAL
-        # ====================================================
-        #
-        # O termo introduzido pelo utilizador é pesquisado
-        # sozinho.
-        #
-        # Assim:
-        #
-        # banana123456 -> 0 resultados
-        #
-        # archaeological -> pesquisa archaeological
-        #
-        # heritage -> pesquisa heritage
-        #
-        # ====================================================
 
         search_terms = [
             user_query
@@ -1775,7 +2224,6 @@ def search(
         max_workers=10
     ) as executor:
 
-        # TED
         for term in clean_terms:
 
             tasks.append(
@@ -1785,7 +2233,6 @@ def search(
                 )
             )
 
-        # WORLD BANK
         for term in clean_world_bank_terms:
 
             tasks.append(
@@ -1795,10 +2242,6 @@ def search(
                 )
             )
 
-
-        # ----------------------------------------------------
-        # RECEBER RESULTADOS
-        # ----------------------------------------------------
 
         for future in as_completed(
             tasks
@@ -1822,11 +2265,14 @@ def search(
 
                 diagnostics.append({
 
-                    "source": "API",
+                    "source":
+                        "API",
 
-                    "ok": False,
+                    "ok":
+                        False,
 
-                    "count": 0,
+                    "count":
+                        0,
 
                     "error":
                         str(exc)
@@ -2001,15 +2447,20 @@ def search(
 
     return {
 
-        "ok": True,
+        "ok":
+            True,
 
-        "query": q,
+        "query":
+            q,
 
-        "region": region,
+        "region":
+            region,
 
-        "category": category,
+        "category":
+            category,
 
-        "results": results,
+        "results":
+            results,
 
         "count":
             len(results),
