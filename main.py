@@ -425,9 +425,18 @@ TED_FIELDS = [
 
     "publication-number",
     "publication-date",
+
+    # TÍTULO
     "notice-title",
+
+    # LÍNGUA OFICIAL DO AVISO
+    "official-language",
+
+    # ENTIDADE / PAÍS
     "buyer-name",
     "buyer-country",
+
+    # CLASSIFICAÇÃO
     "classification-cpv",
     "notice-type",
 
@@ -440,11 +449,11 @@ TED_FIELDS = [
     "deadline-receipt-tender-date-lot",
     "deadline-receipt-tender-time-lot",
 
+    # DESCRIÇÃO
     "description-proc",
     "description-lot"
 
 ]
-
 
 # ============================================================
 # MAPA DE PAÍSES
@@ -723,7 +732,6 @@ def normalize_text(value):
 
     return value.lower()
 
-
 # ============================================================
 # LIMPEZA DOS TÍTULOS TED
 # ============================================================
@@ -731,8 +739,15 @@ def normalize_text(value):
 def choose_multilingual_text(value):
 
     """
-    Quando o TED devolve um campo multilingue como dicionário,
-    escolhe primeiro o inglês e depois outras línguas disponíveis.
+    Escolhe uma versão linguística quando o TED devolve
+    o título como uma estrutura multilingue.
+
+    Dá preferência a:
+    1. língua oficial indicada pelo próprio TED;
+    2. inglês;
+    3. português;
+    4. francês;
+    5. espanhol;
     """
 
     if value is None:
@@ -789,11 +804,30 @@ def choose_multilingual_text(value):
     return str(value)
 
 
-def clean_ted_title(title):
+def clean_ted_title(
+    title,
+    official_language=""
+):
+
+    """
+    Limpa títulos TED/eForms que possam conter várias
+    versões linguísticas consecutivas.
+
+    Exemplo problemático:
+
+    Románia – Régészeti szolgáltatások
+    Rumānija – Arheoloģiskie pakalpojumi
+    România – Servicii de arheologie
+
+    O objetivo é devolver apenas uma versão legível.
+    """
+
+    if title is None:
+        return ""
 
     # --------------------------------------------------------
-    # 1. Se o TED devolver estrutura multilingue,
-    #    escolher uma língua individual.
+    # 1. Se o TED devolver uma estrutura multilingue,
+    #    escolher uma das versões.
     # --------------------------------------------------------
 
     title = choose_multilingual_text(
@@ -818,166 +852,424 @@ def clean_ted_title(title):
         return ""
 
     # --------------------------------------------------------
-    # 2. O TED pode devolver uma cadeia contendo todas
-    #    as traduções consecutivamente.
+    # 2. Normalizar o código da língua oficial.
+    # --------------------------------------------------------
+
+    official_language = flatten(
+        official_language
+    ).strip().lower()
+
+    language_map = {
+
+        "eng": "en",
+        "english": "en",
+
+        "por": "pt",
+        "portuguese": "pt",
+
+        "fra": "fr",
+        "fre": "fr",
+        "french": "fr",
+
+        "spa": "es",
+        "spanish": "es",
+
+        "deu": "de",
+        "ger": "de",
+        "german": "de",
+
+        "ita": "it",
+        "italian": "it",
+
+        "ron": "ro",
+        "rum": "ro",
+        "romanian": "ro",
+
+        "pol": "pl",
+        "polish": "pl",
+
+        "nld": "nl",
+        "dut": "nl",
+        "dutch": "nl",
+
+        "ces": "cs",
+        "cze": "cs",
+
+        "slk": "sk",
+        "slo": "sk",
+
+        "hun": "hu",
+        "hungarian": "hu",
+
+        "ell": "el",
+        "gre": "el",
+
+        "bul": "bg",
+        "bulgarian": "bg",
+
+        "swe": "sv",
+        "swedish": "sv",
+
+        "dan": "da",
+        "danish": "da",
+
+        "fin": "fi",
+        "finnish": "fi",
+
+        "lav": "lv",
+        "latvian": "lv",
+
+        "lit": "lt",
+        "lithuanian": "lt",
+
+        "est": "et",
+        "estonian": "et",
+
+        "slv": "sl",
+        "slovenian": "sl",
+
+        "hrv": "hr",
+        "croatian": "hr"
+    }
+
+    official_language = language_map.get(
+        official_language,
+        official_language
+    )
+
+    # --------------------------------------------------------
+    # 3. Remover separadores estranhos e espaços duplicados.
+    # --------------------------------------------------------
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        title
+    ).strip()
+
+    # --------------------------------------------------------
+    # 4. Caso simples:
+    #    título já curto e sem sinais de múltiplas línguas.
+    # --------------------------------------------------------
+
+    if len(title) <= 220:
+
+        language_markers = [
+            "românia",
+            "romania",
+            "románia",
+            "rumānija",
+            "france",
+            "frança",
+            "francia",
+            "germany",
+            "deutschland",
+            "alemmanha",
+            "alemania",
+            "polska",
+            "poland",
+            "polska",
+            "italia",
+            "italy",
+            "españa",
+            "spain",
+            "portugal",
+            "nederland",
+            "netherlands"
+        ]
+
+        normalized_title = normalize_text(
+            title
+        )
+
+        marker_count = 0
+
+        for marker in language_markers:
+
+            if normalize_text(marker) in normalized_title:
+
+                marker_count += 1
+
+        # Se só houver uma referência linguística,
+        # provavelmente já temos um título normal.
+        if marker_count <= 1:
+
+            return title
+
+    # --------------------------------------------------------
+    # 5. Dividir títulos multilíngues.
     #
-    #    Exemplo:
+    # TED pode devolver:
     #
-    #    França – ... – Fouilles archéologiques ...
-    #    France – ... – Fouilles archéologiques ...
+    # País – Título País – Título País – Título
     #
-    #    Nesse caso procuramos partes repetidas.
+    # ou:
+    #
+    # País – Título – País – Título
     # --------------------------------------------------------
 
     parts = re.split(
-        r"\s+–\s+|\s+-\s+",
+        r"\s+[–—-]\s+",
         title
     )
 
     parts = [
+
         part.strip()
+
         for part in parts
+
         if part.strip()
+
     ]
 
-    if len(parts) >= 6:
+    # --------------------------------------------------------
+    # 6. Procurar blocos do tipo:
+    #
+    # País – Título
+    #
+    # Quando existem várias línguas, normalmente os blocos
+    # aparecem consecutivamente.
+    # --------------------------------------------------------
 
-        candidates = []
+    country_title_candidates = []
 
-        for part in parts:
+    for i in range(
+        0,
+        len(parts) - 1,
+        2
+    ):
 
-            clean_part = re.sub(
-                r"\s+",
-                " ",
-                part
-            ).strip()
+        country = parts[i].strip()
+        subject = parts[i + 1].strip()
 
-            if len(clean_part) < 12:
-                continue
+        if (
 
-            candidates.append(
-                clean_part
+            len(country) <= 80
+
+            and len(subject) >= 3
+
+            and not re.search(
+                r"\b20\d{2}\b",
+                country
             )
 
-        # ----------------------------------------------------
-        # Procurar partes que aparecem várias vezes.
-        # Normalmente é o verdadeiro título do concurso.
-        # ----------------------------------------------------
+        ):
 
-        repetitions = {}
+            country_title_candidates.append({
 
-        for candidate in candidates:
+                "country":
+                    country,
 
-            normalized = normalize_text(
-                candidate
-            )
+                "subject":
+                    subject,
 
-            repetitions.setdefault(
-                normalized,
-                {
-                    "count": 0,
-                    "text": candidate
-                }
-            )
+                "full":
+                    f"{country} – {subject}"
 
-            repetitions[
-                normalized
-            ]["count"] += 1
+            })
 
-        repeated = [
+    # --------------------------------------------------------
+    # 7. Se encontrámos vários blocos, escolher o título
+    #    mais informativo.
+    # --------------------------------------------------------
 
-            item
+    if country_title_candidates:
 
-            for item in repetitions.values()
+        candidates = [
 
-            if item["count"] >= 2
+            item["subject"]
+
+            for item
+            in country_title_candidates
+
+            if len(
+                item["subject"]
+            ) >= 10
 
         ]
 
-        if repeated:
+        if candidates:
 
-            repeated.sort(
+            # Preferir uma versão que contenha arqueologia.
+            archaeology_candidates = [
 
-                key=lambda item: (
-                    item["count"],
-                    len(item["text"])
-                ),
+                candidate
 
-                reverse=True
+                for candidate
+                in candidates
 
+                if any(
+
+                    normalize_text(term)
+                    in normalize_text(candidate)
+
+                    for term in [
+
+                        "archaeolog",
+                        "arqueolog",
+                        "archéolog",
+                        "archeolog",
+                        "arheolog"
+
+                    ]
+
+                )
+
+            ]
+
+            if archaeology_candidates:
+
+                # Se a língua oficial estiver identificada,
+                # tentar escolher uma versão compatível.
+                if official_language:
+
+                    language_preferences = {
+
+                        "en": [
+                            "archaeolog"
+                        ],
+
+                        "pt": [
+                            "arqueolog"
+                        ],
+
+                        "fr": [
+                            "archéolog"
+                        ],
+
+                        "es": [
+                            "arqueolog"
+                        ],
+
+                        "de": [
+                            "archäolog",
+                            "archaolog"
+                        ],
+
+                        "it": [
+                            "archeolog"
+                        ],
+
+                        "ro": [
+                            "arheolog"
+                        ],
+
+                        "pl": [
+                            "archeolog"
+                        ],
+
+                        "nl": [
+                            "archeolog"
+                        ],
+
+                        "hu": [
+                            "régész"
+                        ],
+
+                        "lv": [
+                            "arheolog"
+                        ],
+
+                        "lt": [
+                            "archeolog"
+                        ],
+
+                        "el": [
+                            "archaiolog"
+                        ]
+
+                    }
+
+                    preferred_terms = (
+                        language_preferences.get(
+                            official_language,
+                            []
+                        )
+                    )
+
+                    for candidate in (
+                        archaeology_candidates
+                    ):
+
+                        candidate_normalized = (
+                            normalize_text(
+                                candidate
+                            )
+                        )
+
+                        if any(
+
+                            term in candidate_normalized
+
+                            for term
+                            in preferred_terms
+
+                        ):
+
+                            return candidate
+
+                return archaeology_candidates[0]
+
+            # Caso não haja arqueologia explícita,
+            # escolher o último título suficientemente
+            # informativo.
+            return candidates[-1]
+
+    # --------------------------------------------------------
+    # 8. Fallback para títulos que não seguem a estrutura
+    #    País – Título.
+    # --------------------------------------------------------
+
+    long_parts = [
+
+        part
+
+        for part in parts
+
+        if len(part) >= 15
+
+    ]
+
+    if long_parts:
+
+        # Procurar primeiro uma parte com arqueologia.
+        for part in long_parts:
+
+            normalized_part = normalize_text(
+                part
             )
 
-            selected = repeated[0]["text"]
+            if any(
 
-            # Evitar escolher apenas o nome genérico
-            # "Archaeological services" quando existe
-            # um título mais específico.
+                normalize_text(term)
+                in normalized_part
 
-            generic_titles = {
+                for term in [
 
-                "archaeological services",
-                "servicios arqueologicos",
-                "services archeologiques",
-                "servizi archeologici",
-                "servicos arqueologicos",
-                "servicos de arheologie",
-                "servicii de arheologie",
-                "archaeologische untersuchungen",
-                "archeologische diensten",
-                "arheologisk services",
-                "arkeologiska tjanster",
-                "uslugi archeologiczne",
-                "arheologicke sluzby",
-                "archaeological service"
+                    "archaeolog",
+                    "arqueolog",
+                    "archéolog",
+                    "archeolog",
+                    "arheolog"
 
-            }
+                ]
 
-            if normalize_text(
-                selected
-            ) not in generic_titles:
-
-                return selected
-
-            # Se o primeiro resultado repetido for genérico,
-            # procurar outro título repetido mais específico.
-
-            for item in repeated[1:]:
-
-                candidate = item["text"]
-
-                if normalize_text(
-                    candidate
-                ) not in generic_titles:
-
-                    return candidate
-
-            return selected
-
-    # --------------------------------------------------------
-    # 3. Fallback:
-    #    manter apenas os primeiros segmentos.
-    # --------------------------------------------------------
-
-    simple_parts = re.split(
-        r"\s+–\s+",
-        title
-    )
-
-    if len(simple_parts) >= 4:
-
-        # Procurar o primeiro segmento suficientemente
-        # comprido depois do nome do país/serviço.
-
-        for part in simple_parts:
-
-            part = part.strip()
-
-            if len(part) >= 25:
+            ):
 
                 return part
 
-        return " – ".join(
-            simple_parts[:3]
+        return long_parts[-1]
+
+    # --------------------------------------------------------
+    # 9. Última salvaguarda.
+    # --------------------------------------------------------
+
+    if len(title) > 220:
+
+        return (
+            title[:217].rstrip()
+            + "..."
         )
 
     return title
@@ -1795,18 +2087,29 @@ def notice_to_result(
         return None
 
     title = (
-        notice.get(
-            "notice-title"
-        )
-        or notice.get(
-            "noticeTitle"
-        )
-        or ""
+    notice.get(
+        "notice-title"
     )
+    or notice.get(
+        "noticeTitle"
+    )
+    or ""
+)
 
-    title = clean_ted_title(
-        title
+official_language = (
+    notice.get(
+        "official-language"
     )
+    or notice.get(
+        "officialLanguage"
+    )
+    or ""
+)
+
+title = clean_ted_title(
+    title,
+    official_language
+)
 
     buyer = (
         notice.get(
