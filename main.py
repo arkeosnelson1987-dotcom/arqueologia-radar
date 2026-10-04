@@ -10,14 +10,14 @@ import unicodedata
 
 # ============================================================
 # ARQUEOLOGIA RADAR
-# Versão 2.2 - pesquisa global consolidada
+# Versão 2.3 - pesquisa global consolidada
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="2.2"
+    version="2.3"
 )
 
 REQUEST_TIMEOUT = 30
@@ -287,56 +287,114 @@ ARCHAEOLOGY_CPVS = {
     "71351730",
 }
 
-# 45112450 = excavation work.
-# N\u00e3o \u00e9 considerado, isoladamente, arqueol\u00f3gico.
 GENERAL_EXCAVATION_CPV = {
     "45112450",
 }
 
 # ============================================================
-# TERMOS ARQUEOL\u00d3GICOS DIRETOS
+# TERMOS ARQUEOLÓGICOS DIRETOS
 # ============================================================
 
 DIRECT_TERMS = [
     "archaeology",
     "archaeological",
     "archaeologist",
+    "archaeologists",
     "archaeological excavation",
+    "archaeological excavations",
     "archaeological monitoring",
     "archaeological survey",
     "archaeological investigation",
+    "archaeological investigations",
     "archaeological services",
     "archaeological assessment",
     "archaeological fieldwork",
     "archaeological watching brief",
     "archaeological supervision",
+    "archaeological coordinator",
+    "archaeological consultancy",
+    "archaeological consultant",
+    "archaeological work",
+    "archaeological works",
 
-    "arch\u00e9ologie",
-    "arch\u00e9ologique",
-    "arch\u00e9ologue",
-    "fouilles arch\u00e9ologiques",
+    "archéologie",
+    "archéologique",
+    "archéologue",
+    "fouilles archéologiques",
 
     "arqueologia",
-    "arqueol\u00f3gico",
-    "arqueol\u00f3gica",
-    "arque\u00f3logo",
-    "arque\u00f3loga",
-    "escava\u00e7\u00e3o arqueol\u00f3gica",
-    "acompanhamento arqueol\u00f3gico",
-    "monitoriza\u00e7\u00e3o arqueol\u00f3gica",
-    "prospe\u00e7\u00e3o arqueol\u00f3gica",
-    "avalia\u00e7\u00e3o arqueol\u00f3gica",
+    "arqueológico",
+    "arqueológica",
+    "arqueólogo",
+    "arqueóloga",
+    "escavação arqueológica",
+    "acompanhamento arqueológico",
+    "monitorização arqueológica",
+    "prospeção arqueológica",
+    "prospecção arqueológica",
+    "avaliação arqueológica",
+    "trabalhos arqueológicos",
+    "serviços arqueológicos",
+    "consultoria arqueológica",
+    "consultor arqueológico",
+    "arqueólogo coordenador",
 
-    "arch\u00e4ologie",
-    "arch\u00e4ologisch",
-    "arch\u00e4ologe",
+    "archäologie",
+    "archäologisch",
+    "archäologe",
 
     "archeologie",
     "archeologisch",
 ]
 
 # ============================================================
-# TERMOS DE PATRIM\u00d3NIO
+# FUNÇÕES / SERVIÇOS QUE NÃO DEVEM SER
+# CLASSIFICADOS COMO ARQUEOLOGIA DIRETA
+# ============================================================
+
+ARCHAEOLOGY_SUPPORT_EXCLUSIONS = [
+    "photographer",
+    "photography",
+    "photographic",
+    "architect",
+    "architecture design",
+    "architectural design",
+    "legal expert",
+    "legal services",
+    "lawyer",
+    "attorney",
+    "social media",
+    "communication designer",
+    "graphic designer",
+    "designer",
+    "communications",
+    "communication",
+    "public relations",
+    "marketing",
+    "media coordinator",
+    "signboards",
+    "signboard",
+    "reflective signboards",
+    "supply of signboards",
+    "office equipment",
+    "computer equipment",
+    "information technology",
+    "software",
+    "website",
+    "printing",
+    "printing services",
+    "vehicle",
+    "vehicles",
+    "furniture",
+    "stationery",
+    "training",
+    "catering",
+    "security services",
+    "cleaning services",
+]
+
+# ============================================================
+# TERMOS DE PATRIMÓNIO
 # ============================================================
 
 HERITAGE_TERMS = [
@@ -350,14 +408,14 @@ HERITAGE_TERMS = [
     "heritage management",
     "chance finds",
 
-    "patrim\u00f3nio cultural",
+    "património cultural",
     "patrimonio cultural",
-    "avalia\u00e7\u00e3o patrimonial",
+    "avaliação patrimonial",
     "impacte patrimonial",
     "impacto patrimonial",
 
     "patrimoine culturel",
-    "patrimoine arch\u00e9ologique",
+    "patrimoine archéologique",
     "patrimoine historique",
 
     "heritage conservation",
@@ -399,10 +457,10 @@ MAJOR_PROJECT_TERMS = [
     "ferroviaire",
     "route",
     "autoroute",
-    "a\u00e9roport",
+    "aéroport",
     "port",
     "barrage",
-    "\u00e9nergie",
+    "énergie",
     "infrastructure",
 
     "ferrovia",
@@ -414,171 +472,172 @@ MAJOR_PROJECT_TERMS = [
 ]
 
 # ============================================================
-# MAPAS DE PA\u00cdSES
+# MAPAS DE PAÍSES
 # ============================================================
 
 COUNTRY_MAP = {
     "PT": "Portugal",
     "ES": "Espanha",
-    "FR": "Fran\u00e7a",
+    "FR": "França",
     "DE": "Alemanha",
-    "IT": "It\u00e1lia",
-    "BE": "B\u00e9lgica",
-    "NL": "Pa\u00edses Baixos",
+    "IT": "Itália",
+    "BE": "Bélgica",
+    "NL": "Países Baixos",
     "LU": "Luxemburgo",
     "IE": "Irlanda",
-    "AT": "\u00c1ustria",
-    "PL": "Pol\u00f3nia",
-    "CZ": "Ch\u00e9quia",
-    "SK": "Eslov\u00e1quia",
+    "AT": "Áustria",
+    "PL": "Polónia",
+    "CZ": "Chéquia",
+    "SK": "Eslováquia",
     "HU": "Hungria",
-    "RO": "Rom\u00e9nia",
-    "BG": "Bulg\u00e1ria",
-    "HR": "Cro\u00e1cia",
-    "SI": "Eslov\u00e9nia",
-    "SE": "Su\u00e9cia",
-    "FI": "Finl\u00e2ndia",
+    "RO": "Roménia",
+    "BG": "Bulgária",
+    "HR": "Croácia",
+    "SI": "Eslovénia",
+    "SE": "Suécia",
+    "FI": "Finlândia",
     "DK": "Dinamarca",
-    "EE": "Est\u00f3nia",
-    "LV": "Let\u00f3nia",
-    "LT": "Litu\u00e2nia",
-    "GR": "Gr\u00e9cia",
+    "EE": "Estónia",
+    "LV": "Letónia",
+    "LT": "Lituânia",
+    "GR": "Grécia",
     "CY": "Chipre",
     "MT": "Malta",
     "NO": "Noruega",
-    "IS": "Isl\u00e2ndia",
-    "CH": "Su\u00ed\u00e7a",
+    "IS": "Islândia",
+    "CH": "Suíça",
     "UK": "Reino Unido",
+    "GB": "Reino Unido",
 
     "MA": "Marrocos",
-    "DZ": "Arg\u00e9lia",
-    "TN": "Tun\u00edsia",
+    "DZ": "Argélia",
+    "TN": "Tunísia",
     "EG": "Egito",
-    "ZA": "\u00c1frica do Sul",
-    "KE": "Qu\u00e9nia",
+    "ZA": "África do Sul",
+    "KE": "Quénia",
     "UG": "Uganda",
-    "TZ": "Tanz\u00e2nia",
-    "MZ": "Mo\u00e7ambique",
-    "NG": "Nig\u00e9ria",
+    "TZ": "Tanzânia",
+    "MZ": "Moçambique",
+    "NG": "Nigéria",
     "GH": "Gana",
-    "ET": "Eti\u00f3pia",
+    "ET": "Etiópia",
 
     "US": "Estados Unidos",
-    "CA": "Canad\u00e1",
-    "MX": "M\u00e9xico",
+    "CA": "Canadá",
+    "MX": "México",
     "BR": "Brasil",
     "CL": "Chile",
-    "CO": "Col\u00f4mbia",
+    "CO": "Colômbia",
     "PE": "Peru",
     "AR": "Argentina",
     "UY": "Uruguai",
     "PY": "Paraguai",
 
-    "SA": "Ar\u00e1bia Saudita",
-    "AE": "Emirados \u00c1rabes Unidos",
+    "SA": "Arábia Saudita",
+    "AE": "Emirados Árabes Unidos",
     "QA": "Qatar",
-    "OM": "Om\u00e3",
-    "JO": "Jord\u00e2nia",
+    "OM": "Omã",
+    "JO": "Jordânia",
     "IL": "Israel",
     "TR": "Turquia",
-    "IN": "\u00cdndia",
-    "PK": "Paquist\u00e3o",
+    "IN": "Índia",
+    "PK": "Paquistão",
     "BD": "Bangladesh",
     "LK": "Sri Lanka",
     "CN": "China",
-    "JP": "Jap\u00e3o",
+    "JP": "Japão",
     "KR": "Coreia do Sul",
-    "ID": "Indon\u00e9sia",
-    "MY": "Mal\u00e1sia",
-    "TH": "Tail\u00e2ndia",
+    "ID": "Indonésia",
+    "MY": "Malásia",
+    "TH": "Tailândia",
     "VN": "Vietname",
 
-    "AU": "Austr\u00e1lia",
-    "NZ": "Nova Zel\u00e2ndia",
+    "AU": "Austrália",
+    "NZ": "Nova Zelândia",
 }
 
 ISO3_MAP = {
     "PRT": "Portugal",
     "ESP": "Espanha",
-    "FRA": "Fran\u00e7a",
+    "FRA": "França",
     "DEU": "Alemanha",
-    "ITA": "It\u00e1lia",
-    "BEL": "B\u00e9lgica",
-    "NLD": "Pa\u00edses Baixos",
+    "ITA": "Itália",
+    "BEL": "Bélgica",
+    "NLD": "Países Baixos",
     "LUX": "Luxemburgo",
     "IRL": "Irlanda",
-    "AUT": "\u00c1ustria",
-    "POL": "Pol\u00f3nia",
-    "CZE": "Ch\u00e9quia",
-    "SVK": "Eslov\u00e1quia",
+    "AUT": "Áustria",
+    "POL": "Polónia",
+    "CZE": "Chéquia",
+    "SVK": "Eslováquia",
     "HUN": "Hungria",
-    "ROU": "Rom\u00e9nia",
-    "BGR": "Bulg\u00e1ria",
-    "HRV": "Cro\u00e1cia",
-    "SVN": "Eslov\u00e9nia",
-    "SWE": "Su\u00e9cia",
-    "FIN": "Finl\u00e2ndia",
+    "ROU": "Roménia",
+    "BGR": "Bulgária",
+    "HRV": "Croácia",
+    "SVN": "Eslovénia",
+    "SWE": "Suécia",
+    "FIN": "Finlândia",
     "DNK": "Dinamarca",
-    "EST": "Est\u00f3nia",
-    "LVA": "Let\u00f3nia",
-    "LTU": "Litu\u00e2nia",
-    "GRC": "Gr\u00e9cia",
+    "EST": "Estónia",
+    "LVA": "Letónia",
+    "LTU": "Lituânia",
+    "GRC": "Grécia",
     "CYP": "Chipre",
     "MLT": "Malta",
     "NOR": "Noruega",
-    "ISL": "Isl\u00e2ndia",
-    "CHE": "Su\u00ed\u00e7a",
+    "ISL": "Islândia",
+    "CHE": "Suíça",
     "GBR": "Reino Unido",
 
     "MAR": "Marrocos",
-    "DZA": "Arg\u00e9lia",
-    "TUN": "Tun\u00edsia",
+    "DZA": "Argélia",
+    "TUN": "Tunísia",
     "EGY": "Egito",
-    "ZAF": "\u00c1frica do Sul",
-    "KEN": "Qu\u00e9nia",
+    "ZAF": "África do Sul",
+    "KEN": "Quénia",
     "UGA": "Uganda",
-    "TZA": "Tanz\u00e2nia",
-    "MOZ": "Mo\u00e7ambique",
-    "NGA": "Nig\u00e9ria",
+    "TZA": "Tanzânia",
+    "MOZ": "Moçambique",
+    "NGA": "Nigéria",
     "GHA": "Gana",
-    "ETH": "Eti\u00f3pia",
+    "ETH": "Etiópia",
 
     "USA": "Estados Unidos",
-    "CAN": "Canad\u00e1",
-    "MEX": "M\u00e9xico",
+    "CAN": "Canadá",
+    "MEX": "México",
     "BRA": "Brasil",
     "CHL": "Chile",
-    "COL": "Col\u00f4mbia",
+    "COL": "Colômbia",
     "PER": "Peru",
     "ARG": "Argentina",
     "URY": "Uruguai",
     "PRY": "Paraguai",
 
-    "SAU": "Ar\u00e1bia Saudita",
-    "ARE": "Emirados \u00c1rabes Unidos",
+    "SAU": "Arábia Saudita",
+    "ARE": "Emirados Árabes Unidos",
     "QAT": "Qatar",
-    "OMN": "Om\u00e3",
-    "JOR": "Jord\u00e2nia",
+    "OMN": "Omã",
+    "JOR": "Jordânia",
     "ISR": "Israel",
     "TUR": "Turquia",
-    "IND": "\u00cdndia",
-    "PAK": "Paquist\u00e3o",
+    "IND": "Índia",
+    "PAK": "Paquistão",
     "BGD": "Bangladesh",
     "LKA": "Sri Lanka",
     "CHN": "China",
-    "JPN": "Jap\u00e3o",
+    "JPN": "Japão",
     "KOR": "Coreia do Sul",
-    "IDN": "Indon\u00e9sia",
-    "MYS": "Mal\u00e1sia",
-    "THA": "Tail\u00e2ndia",
+    "IDN": "Indonésia",
+    "MYS": "Malásia",
+    "THA": "Tailândia",
     "VNM": "Vietname",
 
-    "AUS": "Austr\u00e1lia",
-    "NZL": "Nova Zel\u00e2ndia",
+    "AUS": "Austrália",
+    "NZL": "Nova Zelândia",
 }
 
 # ============================================================
-# UTILIT\u00c1RIOS DE TEXTO
+# UTILITÁRIOS DE TEXTO
 # ============================================================
 
 def repair_mojibake(value):
@@ -587,10 +646,16 @@ def repair_mojibake(value):
 
     current = value
 
-    for _ in range(3):
+    for _ in range(5):
         if not any(
             token in current
-            for token in ("Ã", "Â", "â", "ð", "�")
+            for token in (
+                "Ã",
+                "Â",
+                "â",
+                "ð",
+                "�",
+            )
         ):
             break
 
@@ -611,6 +676,23 @@ def repair_mojibake(value):
 
         current = candidate
 
+    replacements = {
+        "â€”": "—",
+        "â€“": "–",
+        "â€˜": "‘",
+        "â€™": "’",
+        "â€œ": "“",
+        "â€": "”",
+        "â€¦": "…",
+        "Â ": " ",
+    }
+
+    for old, new in replacements.items():
+        current = current.replace(
+            old,
+            new
+        )
+
     return current
 
 
@@ -622,8 +704,11 @@ def choose_multilingual_text(value):
         return repair_mojibake(value)
 
     if isinstance(value, list):
+
         for item in value:
+
             if isinstance(item, dict):
+
                 lang = normalize_text(
                     item.get("language")
                     or item.get("lang")
@@ -638,17 +723,23 @@ def choose_multilingual_text(value):
                     or ""
                 )
 
-                if text_value and lang in {
-                    "eng",
-                    "en",
-                    "english",
-                }:
+                if (
+                    text_value
+                    and lang in {
+                        "eng",
+                        "en",
+                        "english",
+                    }
+                ):
                     return choose_multilingual_text(
                         text_value
                     )
 
         for item in value:
-            result = choose_multilingual_text(item)
+
+            result = choose_multilingual_text(
+                item
+            )
 
             if result:
                 return result
@@ -656,6 +747,7 @@ def choose_multilingual_text(value):
         return ""
 
     if isinstance(value, dict):
+
         preferred_keys = [
             "eng",
             "en",
@@ -674,7 +766,9 @@ def choose_multilingual_text(value):
         ]
 
         for key in preferred_keys:
+
             if key in value:
+
                 result = choose_multilingual_text(
                     value[key]
                 )
@@ -690,7 +784,9 @@ def choose_multilingual_text(value):
             "name",
             "description",
         ):
+
             if key in value:
+
                 result = choose_multilingual_text(
                     value[key]
                 )
@@ -699,23 +795,36 @@ def choose_multilingual_text(value):
                     return result
 
         for item in value.values():
-            result = choose_multilingual_text(item)
+
+            result = choose_multilingual_text(
+                item
+            )
 
             if result:
                 return result
 
         return ""
 
-    return repair_mojibake(str(value))
+    return repair_mojibake(
+        str(value)
+    )
 
 
 def normalize_text(value):
     if value is None:
         return ""
 
-    value = choose_multilingual_text(value)
-    value = repair_mojibake(value)
-    value = html.unescape(value)
+    value = choose_multilingual_text(
+        value
+    )
+
+    value = repair_mojibake(
+        value
+    )
+
+    value = html.unescape(
+        value
+    )
 
     value = unicodedata.normalize(
         "NFKD",
@@ -723,20 +832,34 @@ def normalize_text(value):
     )
 
     value = "".join(
-        c for c in value
+        c
+        for c in value
         if not unicodedata.combining(c)
     )
 
     value = value.lower()
-    value = re.sub(r"\s+", " ", value)
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value
+    )
 
     return value.strip()
 
 
 def clean_text(value):
-    value = choose_multilingual_text(value)
-    value = repair_mojibake(value)
-    value = html.unescape(value)
+    value = choose_multilingual_text(
+        value
+    )
+
+    value = repair_mojibake(
+        value
+    )
+
+    value = html.unescape(
+        value
+    )
 
     value = re.sub(
         r"<[^>]+>",
@@ -780,7 +903,17 @@ def parse_date(value):
     if not value:
         return None
 
-    value = value[:10]
+    # ISO timestamps
+    match = re.search(
+        r"\d{4}-\d{2}-\d{2}",
+        value
+    )
+
+    if match:
+        value = match.group(0)
+
+    else:
+        value = value[:10]
 
     for fmt in (
         "%Y-%m-%d",
@@ -788,11 +921,13 @@ def parse_date(value):
         "%d-%m-%Y",
         "%d/%m/%Y",
     ):
+
         try:
             return datetime.strptime(
                 value,
                 fmt
             ).date()
+
         except Exception:
             pass
 
@@ -800,7 +935,9 @@ def parse_date(value):
 
 
 def date_string(value):
-    d = parse_date(value)
+    d = parse_date(
+        value
+    )
 
     if d:
         return d.isoformat()
@@ -809,7 +946,103 @@ def date_string(value):
 
 
 # ============================================================
-# PA\u00cdSES
+# PESQUISA RECURSIVA DE CAMPOS
+# ============================================================
+
+def recursive_values(obj):
+    if isinstance(obj, dict):
+
+        for key, value in obj.items():
+
+            yield key, value
+
+            for nested_key, nested_value in recursive_values(
+                value
+            ):
+                yield nested_key, nested_value
+
+    elif isinstance(obj, list):
+
+        for item in obj:
+
+            for nested_key, nested_value in recursive_values(
+                item
+            ):
+                yield nested_key, nested_value
+
+
+def first_value_recursive(
+    row,
+    exact_keys=None,
+    key_fragments=None
+):
+    exact_keys = exact_keys or []
+    key_fragments = key_fragments or []
+
+    exact_keys_normalized = {
+        normalize_key_name(x)
+        for x in exact_keys
+    }
+
+    for key, value in recursive_values(row):
+
+        key_n = normalize_key_name(
+            key
+        )
+
+        if key_n in exact_keys_normalized:
+
+            if value not in (
+                None,
+                "",
+                [],
+                {},
+            ):
+                return value
+
+    for key, value in recursive_values(row):
+
+        key_n = normalize_key_name(
+            key
+        )
+
+        if any(
+            fragment in key_n
+            for fragment in key_fragments
+        ):
+
+            if value not in (
+                None,
+                "",
+                [],
+                {},
+            ):
+
+                return value
+
+    return ""
+
+
+def normalize_key_name(value):
+    value = str(value or "")
+
+    value = repair_mojibake(
+        value
+    )
+
+    value = value.lower()
+
+    value = re.sub(
+        r"[^a-z0-9]+",
+        "_",
+        value
+    )
+
+    return value.strip("_")
+
+
+# ============================================================
+# PAÍSES
 # ============================================================
 
 def country_from_code(value):
@@ -823,7 +1056,9 @@ def country_from_code(value):
     if value in ISO3_MAP:
         return ISO3_MAP[value]
 
-    return repair_mojibake(value)
+    return repair_mojibake(
+        value
+    )
 
 
 def extract_country(item):
@@ -833,9 +1068,14 @@ def extract_country(item):
         item.get("country"),
         item.get("country-code"),
         item.get("buyer_country"),
+        item.get("countryCode"),
+        item.get("country_code"),
+        item.get("countryname"),
+        item.get("country_name"),
     ]
 
     for candidate in candidates:
+
         text = choose_multilingual_text(
             candidate
         ).strip()
@@ -851,13 +1091,17 @@ def extract_country(item):
         if code in ISO3_MAP:
             return ISO3_MAP[code]
 
-        return repair_mojibake(text)
+        return repair_mojibake(
+            text
+        )
 
     return ""
 
 
 def region_from_country(country):
-    n = normalize_text(country)
+    n = normalize_text(
+        country
+    )
 
     europe = {
         "portugal",
@@ -867,6 +1111,7 @@ def region_from_country(country):
         "italia",
         "belgica",
         "paises baixos",
+        "luxemburgo",
         "irlanda",
         "austria",
         "polonia",
@@ -950,16 +1195,16 @@ def region_from_country(country):
         return "Europa"
 
     if n in africa:
-        return "\u00c1frica"
+        return "África"
 
     if n in america:
-        return "Am\u00e9rica"
+        return "América"
 
     if n in asia:
-        return "\u00c1sia"
+        return "Ásia"
 
     if n in oceania:
-        return "Oce\u00e2nia"
+        return "Oceânia"
 
     return "Global"
 
@@ -975,40 +1220,51 @@ def normalize_cpvs(value):
         return result
 
     if isinstance(value, str):
+
         values = re.findall(
             r"\d{8}",
             value
         )
 
     elif isinstance(value, list):
+
         values = []
 
         for item in value:
+
             values.extend(
                 re.findall(
                     r"\d{8}",
-                    choose_multilingual_text(item)
+                    choose_multilingual_text(
+                        item
+                    )
                 )
             )
 
     elif isinstance(value, dict):
+
         values = []
 
         for item in value.values():
+
             values.extend(
                 re.findall(
                     r"\d{8}",
-                    choose_multilingual_text(item)
+                    choose_multilingual_text(
+                        item
+                    )
                 )
             )
 
     else:
+
         values = re.findall(
             r"\d{8}",
             str(value)
         )
 
     for cpv in values:
+
         if cpv not in result:
             result.append(cpv)
 
@@ -1034,11 +1290,19 @@ MAJOR_TERMS_NORMALIZED = [
     for x in MAJOR_PROJECT_TERMS
 ]
 
+SUPPORT_EXCLUSIONS_NORMALIZED = [
+    normalize_text(x)
+    for x in ARCHAEOLOGY_SUPPORT_EXCLUSIONS
+]
+
 
 def contains_any(text, terms):
-    text = normalize_text(text)
+    text = normalize_text(
+        text
+    )
 
     for term in terms:
+
         if term and term in text:
             return True
 
@@ -1050,7 +1314,9 @@ def contains_any(text, terms):
 # ============================================================
 
 def get_search_mode(query):
-    q = normalize_text(query)
+    q = normalize_text(
+        query
+    )
 
     if not q:
         return "direct"
@@ -1073,7 +1339,7 @@ def get_search_mode(query):
 
 
 # ============================================================
-# CLASSIFICA\u00c7\u00c3O
+# CLASSIFICAÇÃO
 # ============================================================
 
 def classify_result(
@@ -1082,24 +1348,23 @@ def classify_result(
     cpvs,
     mode="specific"
 ):
-    """
-    Classifica apenas com base no objeto/t\u00edtulo/descri\u00e7\u00e3o.
 
-    IMPORTANTE:
-    - O comprador nunca \u00e9 usado para classificar.
-    - CPV isolado nunca classifica.
-    - 'heritage' gen\u00e9rico n\u00e3o \u00e9 arqueologia.
-    """
+    title_n = normalize_text(
+        title
+    )
 
-    title_n = normalize_text(title)
-    description_n = normalize_text(description)
+    description_n = normalize_text(
+        description
+    )
 
     combined = (
         f"{title_n} {description_n}"
     ).strip()
 
     cpvs = set(
-        normalize_cpvs(cpvs)
+        normalize_cpvs(
+            cpvs
+        )
     )
 
     direct_text = contains_any(
@@ -1115,6 +1380,11 @@ def classify_result(
     major = contains_any(
         combined,
         MAJOR_TERMS_NORMALIZED
+    )
+
+    support_exclusion = contains_any(
+        combined,
+        SUPPORT_EXCLUSIONS_NORMALIZED
     )
 
     cpv_direct = bool(
@@ -1135,6 +1405,69 @@ def classify_result(
                 0
             )
 
+        # Excluir funções auxiliares quando o objecto
+        # é claramente fotografia, arquitectura, jurídico,
+        # comunicação, sinalética, etc.
+        #
+        # Excepção: se houver uma expressão inequívoca
+        # de trabalho arqueológico, mantém-se.
+        strong_archaeology = any(
+            phrase in combined
+            for phrase in [
+                "archaeological excavation",
+                "archaeological excavations",
+                "archaeological monitoring",
+                "archaeological survey",
+                "archaeological investigation",
+                "archaeological investigations",
+                "archaeological services",
+                "archaeological assessment",
+                "archaeological fieldwork",
+                "archaeological watching brief",
+                "archaeological supervision",
+                "archaeological coordinator",
+                "archaeological consultancy",
+                "archaeological consultant",
+                "archaeological work",
+                "archaeological works",
+                "fouilles archeologiques",
+                "escavacao arqueologica",
+                "acompanhamento arqueologico",
+                "monitorizacao arqueologica",
+                "prospeccao arqueologica",
+                "avaliacao arqueologica",
+                "trabalhos arqueologicos",
+                "servicos arqueologicos",
+                "consultoria arqueologica",
+                "consultor arqueologico",
+                "arqueologo coordenador",
+            ]
+        )
+
+        direct_professional = any(
+            phrase in combined
+            for phrase in [
+                "archaeologist",
+                "archaeologists",
+                "archaeologue",
+                "archeologue",
+                "arqueologo",
+                "arqueologa",
+            ]
+        )
+
+        if (
+            support_exclusion
+            and not (
+                strong_archaeology
+                or direct_professional
+            )
+        ):
+            return (
+                "Outro",
+                0
+            )
+
         score = 100
 
         if cpv_direct:
@@ -1149,12 +1482,13 @@ def classify_result(
         )
 
     # --------------------------------------------------------
-    # PESQUISA DE PATRIM\u00d3NIO
+    # PESQUISA DE PATRIMÓNIO
     # --------------------------------------------------------
 
     if mode == "heritage":
 
         if direct_text:
+
             score = 100
 
             if cpv_direct:
@@ -1166,13 +1500,14 @@ def classify_result(
             )
 
         if heritage_text:
+
             score = 70
 
             if major:
                 score += 10
 
             return (
-                "Patrim\u00f3nio / potencial arqueol\u00f3gico",
+                "Património / potencial arqueológico",
                 min(score, 95)
             )
 
@@ -1182,12 +1517,47 @@ def classify_result(
         )
 
     # --------------------------------------------------------
-    # PESQUISA ESPEC\u00cdFICA
+    # PESQUISA ESPECÍFICA
     # --------------------------------------------------------
 
     if mode == "specific":
 
         if direct_text:
+
+            if (
+                support_exclusion
+                and not any(
+                    phrase in combined
+                    for phrase in [
+                        "archaeological excavation",
+                        "archaeological monitoring",
+                        "archaeological survey",
+                        "archaeological investigation",
+                        "archaeological services",
+                        "archaeological assessment",
+                        "archaeological fieldwork",
+                        "archaeological watching brief",
+                        "archaeological supervision",
+                        "archaeological coordinator",
+                        "archaeological consultancy",
+                        "archaeological consultant",
+                        "archaeological work",
+                        "archaeological works",
+                        "archaeologist",
+                        "archaeologists",
+                        "arqueologo",
+                        "arqueologa",
+                        "arqueologia",
+                        "trabalhos arqueologicos",
+                        "servicos arqueologicos",
+                    ]
+                )
+            ):
+                return (
+                    "Outro",
+                    0
+                )
+
             score = 100
 
             if cpv_direct:
@@ -1202,8 +1572,9 @@ def classify_result(
             )
 
         if heritage_text:
+
             return (
-                "Patrim\u00f3nio / potencial arqueol\u00f3gico",
+                "Património / potencial arqueológico",
                 70
             )
 
@@ -1218,39 +1589,67 @@ def classify_result(
 # ============================================================
 
 def normalize_result(result):
-    if not isinstance(result, dict):
+
+    if not isinstance(
+        result,
+        dict
+    ):
         return None
 
     title = clean_text(
-        result.get("title", "")
+        result.get(
+            "title",
+            ""
+        )
     )
 
     description = clean_text(
-        result.get("description", "")
+        result.get(
+            "description",
+            ""
+        )
     )
 
     buyer = clean_text(
-        result.get("buyer", "")
+        result.get(
+            "buyer",
+            ""
+        )
     )
 
     country = clean_text(
-        result.get("country", "")
+        result.get(
+            "country",
+            ""
+        )
     )
 
     source = clean_text(
-        result.get("source", "")
+        result.get(
+            "source",
+            ""
+        )
     )
 
     url = clean_text(
-        result.get("url", "")
+        result.get(
+            "url",
+            ""
+        )
     )
 
     cpv = normalize_cpvs(
-        result.get("cpv", [])
+        result.get(
+            "cpv",
+            []
+        )
     )
 
     category = clean_text(
-        result.get("category", "")
+        result.get(
+            "category",
+            ""
+        )
     )
 
     score = result.get(
@@ -1260,6 +1659,7 @@ def normalize_result(result):
 
     try:
         score = int(score)
+
     except Exception:
         score = 0
 
@@ -1283,8 +1683,11 @@ def normalize_result(result):
 
 
 def recent_enough(result):
+
     d = parse_date(
-        result.get("date")
+        result.get(
+            "date"
+        )
     )
 
     if not d:
@@ -1294,6 +1697,7 @@ def recent_enough(result):
 
 
 def dedupe_results(results):
+
     unique = {}
 
     for item in results:
@@ -1325,6 +1729,7 @@ def dedupe_results(results):
         )
 
         if key in unique:
+
             if (
                 normalized["score"]
                 > unique[key]["score"]
@@ -1340,8 +1745,16 @@ def dedupe_results(results):
 
     output.sort(
         key=lambda x: (
-            -int(x.get("score", 0)),
-            x.get("date", ""),
+            -int(
+                x.get(
+                    "score",
+                    0
+                )
+            ),
+            x.get(
+                "date",
+                ""
+            ),
         )
     )
 
@@ -1371,11 +1784,14 @@ TED_FIELDS = [
 
 
 def clean_ted_title(value):
+
     title = choose_multilingual_text(
         value
     )
 
-    title = clean_text(title)
+    title = clean_text(
+        title
+    )
 
     title = re.sub(
         r"^\s*(?:[A-Za-z]{2,3})\s*[-:]\s*",
@@ -1390,22 +1806,37 @@ def ted_notice_to_result(
     notice,
     search_mode="direct"
 ):
+
     title = clean_ted_title(
-        notice.get("notice-title")
-        or notice.get("title")
+        notice.get(
+            "notice-title"
+        )
+        or notice.get(
+            "title"
+        )
         or ""
     )
 
     description = clean_text(
-        notice.get("description-proc")
-        or notice.get("description-lot")
-        or notice.get("description")
+        notice.get(
+            "description-proc"
+        )
+        or notice.get(
+            "description-lot"
+        )
+        or notice.get(
+            "description"
+        )
         or ""
     )
 
     buyer = clean_text(
-        notice.get("buyer-name")
-        or notice.get("buyer")
+        notice.get(
+            "buyer-name"
+        )
+        or notice.get(
+            "buyer"
+        )
         or ""
     )
 
@@ -1414,27 +1845,41 @@ def ted_notice_to_result(
     )
 
     cpvs = normalize_cpvs(
-        notice.get("classification-cpv")
-        or notice.get("cpv")
+        notice.get(
+            "classification-cpv"
+        )
+        or notice.get(
+            "cpv"
+        )
         or []
     )
 
     pub_date = (
-        notice.get("publication-date")
-        or notice.get("publicationDate")
-        or notice.get("date")
+        notice.get(
+            "publication-date"
+        )
+        or notice.get(
+            "publicationDate"
+        )
+        or notice.get(
+            "date"
+        )
         or ""
     )
 
     deadline = (
-        notice.get("deadline-date-lot")
+        notice.get(
+            "deadline-date-lot"
+        )
         or notice.get(
             "deadline-receipt-tender-date-lot"
         )
         or notice.get(
             "deadline-receipt-request-date-lot"
         )
-        or notice.get("deadline")
+        or notice.get(
+            "deadline"
+        )
         or ""
     )
 
@@ -1446,23 +1891,33 @@ def ted_notice_to_result(
     )
 
     publication_number = clean_text(
-        notice.get("publication-number")
-        or notice.get("publicationNumber")
+        notice.get(
+            "publication-number"
+        )
+        or notice.get(
+            "publicationNumber"
+        )
         or ""
     )
 
     url = ""
 
     if publication_number:
+
         url = (
             "https://ted.europa.eu/en/notice/-/detail/"
             + publication_number
         )
 
     if not url:
+
         url = choose_multilingual_text(
-            notice.get("url")
-            or notice.get("links")
+            notice.get(
+                "url"
+            )
+            or notice.get(
+                "links"
+            )
             or ""
         )
 
@@ -1490,6 +1945,7 @@ def query_ted(
     diagnostics,
     search_mode="direct"
 ):
+
     payload = {
         "query": f'FT~"{term}"',
         "pageSize": PAGE_SIZE,
@@ -1498,6 +1954,7 @@ def query_ted(
     }
 
     try:
+
         response = requests.post(
             TED_URL,
             json=payload,
@@ -1532,10 +1989,14 @@ def query_ted(
             ):
                 continue
 
-            if not recent_enough(item):
+            if not recent_enough(
+                item
+            ):
                 continue
 
-            results.append(item)
+            results.append(
+                item
+            )
 
         diagnostics.append({
             "source": "TED",
@@ -1567,8 +2028,12 @@ def query_ted(
 # ============================================================
 
 def first_value(row, keys):
+
     for key in keys:
-        value = row.get(key)
+
+        value = row.get(
+            key
+        )
 
         if value not in (
             None,
@@ -1586,6 +2051,7 @@ def query_world_bank(
     diagnostics,
     search_mode="direct"
 ):
+
     try:
 
         params = {
@@ -1609,7 +2075,10 @@ def query_world_bank(
 
         rows = []
 
-        if isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
 
             for key in (
                 "procnotices",
@@ -1618,13 +2087,23 @@ def query_world_bank(
                 "documents",
             ):
 
-                value = data.get(key)
+                value = data.get(
+                    key
+                )
 
-                if isinstance(value, list):
+                if isinstance(
+                    value,
+                    list
+                ):
+
                     rows = value
                     break
 
-                if isinstance(value, dict):
+                if isinstance(
+                    value,
+                    dict
+                ):
+
                     rows = list(
                         value.values()
                     )
@@ -1634,7 +2113,10 @@ def query_world_bank(
 
         for row in rows:
 
-            if not isinstance(row, dict):
+            if not isinstance(
+                row,
+                dict
+            ):
                 continue
 
             title = clean_text(
@@ -1660,6 +2142,7 @@ def query_world_bank(
                         "notice_description",
                     ]
                 )
+
             )
 
             buyer = clean_text(
@@ -1669,21 +2152,66 @@ def query_world_bank(
                         "borrower",
                         "buyer",
                         "agency",
+                        "procuring_entity",
+                        "client",
                         "project_name",
                     ]
                 )
             )
 
-            country = clean_text(
-                first_value(
+            # ------------------------------------------------
+            # País - tentativa directa + pesquisa recursiva
+            # ------------------------------------------------
+
+            country_value = first_value(
+                row,
+                [
+                    "country",
+                    "countryname",
+                    "country_name",
+                    "countryCode",
+                    "country_code",
+                ]
+            )
+
+            if not country_value:
+
+                country_value = first_value_recursive(
                     row,
-                    [
+                    exact_keys=[
                         "country",
                         "countryname",
                         "country_name",
+                        "countryCode",
+                        "country_code",
+                    ],
+                    key_fragments=[
+                        "country",
                     ]
                 )
+
+            country = clean_text(
+                country_value
             )
+
+            # Se for código de país
+            country_code = normalize_text(
+                country
+            ).upper()
+
+            if country_code in COUNTRY_MAP:
+                country = COUNTRY_MAP[
+                    country_code
+                ]
+
+            elif country_code in ISO3_MAP:
+                country = ISO3_MAP[
+                    country_code
+                ]
+
+            # ------------------------------------------------
+            # CPV
+            # ------------------------------------------------
 
             cpvs = normalize_cpvs(
                 first_value(
@@ -1696,6 +2224,10 @@ def query_world_bank(
                 )
             )
 
+            # ------------------------------------------------
+            # DATA DE PUBLICAÇÃO
+            # ------------------------------------------------
+
             pub_date = first_value(
                 row,
                 [
@@ -1707,8 +2239,35 @@ def query_world_bank(
                     "procurement_notice_date",
                     "bid_publication_date",
                     "date",
+                    "published_date",
+                    "publishedDate",
                 ]
             )
+
+            if not pub_date:
+
+                pub_date = first_value_recursive(
+                    row,
+                    exact_keys=[
+                        "publication_date",
+                        "publicationDate",
+                        "publicationdate",
+                        "notice_date",
+                        "noticeDate",
+                        "procurement_notice_date",
+                        "bid_publication_date",
+                        "published_date",
+                        "publishedDate",
+                    ],
+                    key_fragments=[
+                        "publication",
+                        "published",
+                    ]
+                )
+
+            # ------------------------------------------------
+            # PRAZO
+            # ------------------------------------------------
 
             deadline = first_value(
                 row,
@@ -1718,8 +2277,32 @@ def query_world_bank(
                     "deadline",
                     "deadline_date",
                     "bid_submission_deadline",
+                    "closing_date",
+                    "closingDate",
+                    "submission_date",
                 ]
             )
+
+            if not deadline:
+
+                deadline = first_value_recursive(
+                    row,
+                    exact_keys=[
+                        "submission_deadline",
+                        "submissionDeadline",
+                        "deadline",
+                        "deadline_date",
+                        "bid_submission_deadline",
+                        "closing_date",
+                        "closingDate",
+                        "submission_date",
+                    ],
+                    key_fragments=[
+                        "deadline",
+                        "closing",
+                        "submission",
+                    ]
+                )
 
             category, score = classify_result(
                 title,
@@ -1730,6 +2313,37 @@ def query_world_bank(
 
             if category == "Outro":
                 continue
+
+            # ------------------------------------------------
+            # URL
+            # ------------------------------------------------
+
+            url_value = first_value(
+                row,
+                [
+                    "url",
+                    "notice_url",
+                    "web_url",
+                    "procurement_url",
+                    "link",
+                ]
+            )
+
+            if not url_value:
+
+                url_value = first_value_recursive(
+                    row,
+                    exact_keys=[
+                        "url",
+                        "notice_url",
+                        "web_url",
+                        "procurement_url",
+                        "link",
+                    ],
+                    key_fragments=[
+                        "url",
+                    ]
+                )
 
             item = {
                 "title": title,
@@ -1746,21 +2360,17 @@ def query_world_bank(
                 "score": score,
                 "source": "World Bank Procurement",
                 "url": clean_text(
-                    first_value(
-                        row,
-                        [
-                            "url",
-                            "notice_url",
-                            "web_url",
-                            "procurement_url",
-                        ]
-                    )
+                    url_value
                 ),
                 "description": description,
             }
 
-            if recent_enough(item):
-                results.append(item)
+            if recent_enough(
+                item
+            ):
+                results.append(
+                    item
+                )
 
         diagnostics.append({
             "source": "World Bank Procurement",
@@ -1797,10 +2407,10 @@ def query_south_africa(
     search_mode="direct"
 ):
     """
-    Mantido para diagn\u00f3stico futuro.
+    Mantido para diagnóstico futuro.
 
-    N\u00e3o \u00e9 utilizado na pesquisa autom\u00e1tica
-    porque o endpoint atual apresenta timeout.
+    Não é utilizado na pesquisa automática
+    porque o endpoint actual apresenta timeout.
     """
 
     try:
@@ -1823,27 +2433,40 @@ def query_south_africa(
 
         releases = []
 
-        if isinstance(data, dict):
+        if isinstance(
+            data,
+            dict
+        ):
 
             if isinstance(
                 data.get("releases"),
                 list
             ):
-                releases = data["releases"]
+                releases = data[
+                    "releases"
+                ]
 
             elif isinstance(
                 data.get("results"),
                 list
             ):
-                releases = data["results"]
+                releases = data[
+                    "results"
+                ]
 
             elif isinstance(
                 data.get("data"),
                 list
             ):
-                releases = data["data"]
+                releases = data[
+                    "data"
+                ]
 
-        elif isinstance(data, list):
+        elif isinstance(
+            data,
+            list
+        ):
+
             releases = data
 
         results = []
@@ -1916,13 +2539,16 @@ def query_south_africa(
                 buyer,
                 dict
             ):
+
                 buyer_name = clean_text(
                     buyer.get(
                         "name",
                         ""
                     )
                 )
+
             else:
+
                 buyer_name = clean_text(
                     buyer
                 )
@@ -1965,7 +2591,7 @@ def query_south_africa(
             item = {
                 "title": title,
                 "buyer": buyer_name,
-                "country": "\u00c1frica do Sul",
+                "country": "África do Sul",
                 "date": date_string(
                     date_value
                 ),
@@ -1984,8 +2610,12 @@ def query_south_africa(
                 "description": description,
             }
 
-            if recent_enough(item):
-                results.append(item)
+            if recent_enough(
+                item
+            ):
+                results.append(
+                    item
+                )
 
         diagnostics.append({
             "source": "South Africa eTenders \u2014 OCDS",
@@ -2013,7 +2643,7 @@ def query_south_africa(
 
 
 # ============================================================
-# SECOP II - COL\u00d4MBIA
+# SECOP II - COLÔMBIA
 # ============================================================
 
 def query_secop(
@@ -2021,10 +2651,11 @@ def query_secop(
     diagnostics,
     search_mode="direct"
 ):
+
     try:
 
         params = {
-            "$limit": 500,
+            "$limit": 1000,
             "$q": term,
         }
 
@@ -2151,7 +2782,7 @@ def query_secop(
             item = {
                 "title": title,
                 "buyer": buyer,
-                "country": "Col\u00f4mbia",
+                "country": "Colômbia",
                 "date": date_string(
                     date_value
                 ),
@@ -2161,7 +2792,7 @@ def query_secop(
                 "cpv": cpvs,
                 "category": category,
                 "score": score,
-                "source": "SECOP II \u2014 Col\u00f4mbia",
+                "source": "SECOP II \u2014 Colômbia",
                 "url": clean_text(
                     row.get("url")
                     or row.get("link")
@@ -2170,11 +2801,15 @@ def query_secop(
                 "description": description,
             }
 
-            if recent_enough(item):
-                results.append(item)
+            if recent_enough(
+                item
+            ):
+                results.append(
+                    item
+                )
 
         diagnostics.append({
-            "source": "SECOP II \u2014 Col\u00f4mbia",
+            "source": "SECOP II \u2014 Colômbia",
             "term": term,
             "ok": True,
             "count": len(results),
@@ -2187,7 +2822,7 @@ def query_secop(
     except Exception as exc:
 
         diagnostics.append({
-            "source": "SECOP II \u2014 Col\u00f4mbia",
+            "source": "SECOP II \u2014 Colômbia",
             "term": term,
             "ok": False,
             "count": 0,
@@ -2199,7 +2834,7 @@ def query_secop(
 
 
 # ============================================================
-# TERMOS AUTOM\u00c1TICOS
+# TERMOS AUTOMÁTICOS
 # ============================================================
 
 AUTOMATIC_TERMS_TED = [
@@ -2215,46 +2850,52 @@ AUTOMATIC_TERMS_TED = [
     "archaeological fieldwork",
     "archaeological watching brief",
 
-    "arch\u00e9ologie",
-    "arch\u00e9ologique",
-    "fouilles arch\u00e9ologiques",
+    "archéologie",
+    "archéologique",
+    "fouilles archéologiques",
 
     "arqueologia",
-    "arqueol\u00f3gico",
-    "arqueol\u00f3gica",
-    "escava\u00e7\u00e3o arqueol\u00f3gica",
-    "acompanhamento arqueol\u00f3gico",
+    "arqueológico",
+    "arqueológica",
+    "escavação arqueológica",
+    "acompanhamento arqueológico",
 
-    "arch\u00e4ologie",
-    "arch\u00e4ologisch",
+    "archäologie",
+    "archäologisch",
 ]
 
 AUTOMATIC_TERMS_WORLD_BANK = [
     "archaeology",
     "archaeological",
+    "archaeologist",
     "archaeological excavation",
     "archaeological monitoring",
     "archaeological survey",
     "archaeological assessment",
-    "archaeological heritage",
+    "archaeological coordinator",
+    "archaeological consultancy",
 ]
 
 AUTOMATIC_TERMS_SECOP = [
     "arqueologia",
-    "arqueol\u00f3gico",
-    "arqueol\u00f3gica",
-    "arque\u00f3logo",
-    "arque\u00f3loga",
-    "escava\u00e7\u00e3o arqueol\u00f3gica",
-    "acompanhamento arqueol\u00f3gico",
+    "arqueológico",
+    "arqueológica",
+    "arqueólogo",
+    "arqueóloga",
+    "escavação arqueológica",
+    "acompanhamento arqueológico",
+    "prospeção arqueológica",
+    "prospecção arqueológica",
     "archaeology",
     "archaeological",
+    "archaeologist",
 ]
 
 
 def is_global_archaeology_query(
     query
 ):
+
     mode = get_search_mode(
         query
     )
@@ -2266,20 +2907,17 @@ def is_global_archaeology_query(
 
 
 # ============================================================
-# PESQUISA AUTOM\u00c1TICA GLOBAL
+# PESQUISA AUTOMÁTICA GLOBAL
 # ============================================================
 
 def automatic_search(
     query,
     diagnostics
 ):
+
     search_mode = get_search_mode(
         query
     )
-
-    # --------------------------------------------------------
-    # Se for pesquisa direta de arqueologia
-    # --------------------------------------------------------
 
     if search_mode == "direct":
 
@@ -2295,10 +2933,6 @@ def automatic_search(
             AUTOMATIC_TERMS_SECOP
         )
 
-    # --------------------------------------------------------
-    # Se for patrim\u00f3nio
-    # --------------------------------------------------------
-
     elif search_mode == "heritage":
 
         ted_terms = [
@@ -2312,10 +2946,6 @@ def automatic_search(
         secop_terms = [
             query
         ]
-
-    # --------------------------------------------------------
-    # Pesquisa espec\u00edfica
-    # --------------------------------------------------------
 
     else:
 
@@ -2333,8 +2963,8 @@ def automatic_search(
 
     jobs = []
 
-    # TED
     for term in ted_terms:
+
         jobs.append(
             (
                 "TED",
@@ -2343,8 +2973,8 @@ def automatic_search(
             )
         )
 
-    # World Bank
     for term in world_bank_terms:
+
         jobs.append(
             (
                 "WORLD_BANK",
@@ -2353,8 +2983,8 @@ def automatic_search(
             )
         )
 
-    # SECOP
     for term in secop_terms:
+
         jobs.append(
             (
                 "SECOP",
@@ -2370,6 +3000,7 @@ def automatic_search(
         source, term, mode = job
 
         if source == "TED":
+
             return query_ted(
                 term,
                 diagnostics,
@@ -2377,6 +3008,7 @@ def automatic_search(
             )
 
         if source == "WORLD_BANK":
+
             return query_world_bank(
                 term,
                 diagnostics,
@@ -2384,6 +3016,7 @@ def automatic_search(
             )
 
         if source == "SECOP":
+
             return query_secop(
                 term,
                 diagnostics,
@@ -2432,6 +3065,7 @@ def apply_filters(
     region="",
     category=""
 ):
+
     filtered = []
 
     region_n = normalize_text(
@@ -2461,23 +3095,28 @@ def apply_filters(
         )
 
         if region_n:
+
             if item_region != region_n:
                 continue
 
         if category_n:
+
             if category_n not in item_category:
                 continue
 
-        filtered.append(item)
+        filtered.append(
+            item
+        )
 
     return filtered
 
 
 # ============================================================
-# ESTAT\u00cdSTICAS
+# ESTATÍSTICAS
 # ============================================================
 
 def build_regions(results):
+
     regions = {}
 
     for item in results:
@@ -2515,17 +3154,23 @@ def build_regions(results):
 def health():
 
     automatic_sources = [
-        source["name"]
+        clean_text(
+            source["name"]
+        )
         for source in SOURCES
-        if source.get("automatic")
+        if source.get(
+            "automatic"
+        )
     ]
 
     return {
         "ok": True,
         "app": "Arqueologia Radar",
-        "version": "2.2",
+        "version": "2.3",
         "period_days": PERIOD_DAYS,
-        "sources": len(SOURCES),
+        "sources": len(
+            SOURCES
+        ),
         "automatic_sources": len(
             automatic_sources
         ),
@@ -2537,7 +3182,7 @@ def health():
 
 
 # ============================================================
-# TESTE TED - PA\u00cdS
+# TESTE TED - PAÍS
 # ============================================================
 
 @app.get(
@@ -2546,7 +3191,7 @@ def health():
 def test_ted_country(
     country: str = Query(
         "MAR",
-        description="C\u00f3digo de pa\u00eds TED"
+        description="Código de país TED"
     ),
     term: str = Query(
         "archaeology"
@@ -2597,7 +3242,7 @@ def test_ted_country(
 
 
 # ============================================================
-# TESTE TED M\u00cdNIMO
+# TESTE TED MÍNIMO
 # ============================================================
 
 @app.get(
@@ -2666,7 +3311,7 @@ def search(
     ),
     region: str = Query(
         "",
-        description="Regi\u00e3o"
+        description="Região"
     ),
     category: str = Query(
         "",
@@ -2676,7 +3321,9 @@ def search(
 
     started = datetime.now()
 
-    query = clean_text(q)
+    query = clean_text(
+        q
+    )
 
     diagnostics = []
 
@@ -2702,7 +3349,7 @@ def search(
     )
 
     # --------------------------------------------------------
-    # NORMALIZA\u00c7\u00c3O
+    # NORMALIZAÇÃO
     # --------------------------------------------------------
 
     normalized_results = []
@@ -2752,7 +3399,7 @@ def search(
     )
 
     # --------------------------------------------------------
-    # REGI\u00d5ES
+    # REGIÕES
     # --------------------------------------------------------
 
     regions = build_regions(
@@ -2765,15 +3412,21 @@ def search(
     ).total_seconds()
 
     automatic_source_names = [
-        source["name"]
+        clean_text(
+            source["name"]
+        )
         for source in SOURCES
-        if source.get("automatic")
+        if source.get(
+            "automatic"
+        )
     ]
 
     portal_count = len([
         source
         for source in SOURCES
-        if not source.get("automatic")
+        if not source.get(
+            "automatic"
+        )
     ])
 
     return {
@@ -2857,7 +3510,7 @@ def app_js():
 
     return JSONResponse({
         "ok": False,
-        "error": "app.js n\u00e3o encontrado."
+        "error": "app.js não encontrado."
     })
 
 
