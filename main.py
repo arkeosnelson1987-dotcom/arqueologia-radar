@@ -3270,3 +3270,93 @@ def manifest():
             "standalone"
 
     })
+    # ============================================================
+# TESTE TED MINIMAL
+# ============================================================
+
+@app.get("/api/test-ted-minimal")
+def test_ted_minimal():
+
+    test_query = "FT~archaeological"
+
+    payload = {
+
+        "query":
+            test_query,
+
+        "fields": [
+            "publication-number",
+            "publication-date",
+            "notice-title"
+        ],
+
+        "page":
+            1,
+
+        "limit":
+            10,
+
+        "scope":
+            "ACTIVE",
+
+        "checkQuerySyntax":
+            False,
+
+        "paginationMode":
+            "PAGE_NUMBER"
+
+    }
+
+    try:
+
+        response = requests.post(
+
+            TED_URL,
+
+            json=payload,
+
+            timeout=REQUEST_TIMEOUT
+
+        )
+
+        try:
+
+            data = response.json()
+
+        except Exception:
+
+            data = response.text
+
+        return {
+
+            "ok":
+                response.status_code < 400,
+
+            "status_code":
+                response.status_code,
+
+            "query":
+                test_query,
+
+            "payload":
+                payload,
+
+            "response":
+                data
+
+        }
+
+    except Exception as exc:
+
+        return {
+
+            "ok":
+                False,
+
+            "query":
+                test_query,
+
+            "error":
+                str(exc)
+
+        }
