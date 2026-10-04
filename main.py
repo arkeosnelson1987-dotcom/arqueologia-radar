@@ -1,437 +1,354 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import requests
-import re
 import html
+import re
+import requests
 import unicodedata
-import time
-import os
-
 
 # ============================================================
-# CONFIGURAÇÃO
+# ARQUEOLOGIA RADAR
+# Versão 2.1 - pesquisa global consolidada
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="2.0"
+    version="2.1"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+REQUEST_TIMEOUT = 30
 PERIOD_DAYS = 365
 PAGE_SIZE = 100
-REQUEST_TIMEOUT = 30
-
-
-# ============================================================
-# URLS DAS FONTES AUTOMÁTICAS
-# ============================================================
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
+WORLD_BANK_URL = "https://search.worldbank.org/api/v2/procnotices"
 
-WORLD_BANK_URL = (
-    "https://search.worldbank.org/api/v2/procnotices"
-)
-
-SOUTH_AFRICA_OCDS_URL = (
+SOUTH_AFRICA_URL = (
     "https://ocds-api.etenders.gov.za/api/OCDSReleases"
 )
 
-COLOMBIA_SECOP_URL = (
+SECOP_URL = (
     "https://www.datos.gov.co/resource/p6dx-8zbt.json"
 )
 
-
 # ============================================================
 # FONTES
-#
-# automatic=True  -> o Radar efectivamente pesquisa a fonte
-# automatic=False -> portal de referência / expansão futura
 # ============================================================
 
 SOURCES = [
-
     {
         "name": "TED — Europa",
         "region": "Europa",
+        "country": "UE",
+        "url": "https://ted.europa.eu/",
         "type": "api",
         "automatic": True,
-        "url": "https://ted.europa.eu/"
     },
-
     {
         "name": "World Bank Procurement",
         "region": "Global",
+        "country": "",
+        "url": "https://projects.worldbank.org/en/projects-operations/procurement",
         "type": "api",
         "automatic": True,
-        "url": "https://projects.worldbank.org/en/projects-operations/procurement"
     },
-
     {
         "name": "South Africa eTenders — OCDS",
         "region": "África",
+        "country": "África do Sul",
+        "url": "https://www.etenders.gov.za/",
         "type": "api",
         "automatic": True,
-        "url": "https://www.etenders.gov.za/"
     },
-
     {
         "name": "SECOP II — Colômbia",
-        "region": "Américas",
+        "region": "América",
+        "country": "Colômbia",
+        "url": "https://www.colombiacompra.gov.co/",
         "type": "api",
         "automatic": True,
-        "url": "https://www.datos.gov.co/"
     },
 
+    # --------------------------------------------------------
+    # PORTAIS / FONTES DE REFERÊNCIA
+    # --------------------------------------------------------
+
     {
-        "name": "BASE Portugal",
+        "name": "AfDB — African Development Bank",
+        "region": "África",
+        "country": "",
+        "url": "https://www.afdb.org/en/projects-and-operations/procurement",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "SAM.gov — Estados Unidos",
+        "region": "América",
+        "country": "EUA",
+        "url": "https://sam.gov/content/opportunities",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "BASE — Portugal",
         "region": "Europa",
+        "country": "Portugal",
+        "url": "https://www.base.gov.pt/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.base.gov.pt/"
     },
-
     {
-        "name": "Contratación Pública España",
+        "name": "Contratación del Estado — Espanha",
         "region": "Europa",
+        "country": "Espanha",
+        "url": "https://contrataciondelestado.es/",
         "type": "portal",
         "automatic": False,
-        "url": "https://contrataciondelestado.es/"
     },
-
     {
-        "name": "UNDB",
+        "name": "UNDB — United Nations Development Business",
         "region": "Global",
+        "country": "",
+        "url": "https://devbusiness.un.org/",
         "type": "portal",
         "automatic": False,
-        "url": "https://devbusiness.un.org/"
     },
-
     {
-        "name": "UNGM",
+        "name": "UNGM — United Nations Global Marketplace",
         "region": "Global",
+        "country": "",
+        "url": "https://www.ungm.org/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.ungm.org/"
     },
-
     {
-        "name": "EBRD",
-        "region": "Global",
+        "name": "EBRD — European Bank for Reconstruction and Development",
+        "region": "Europa / Ásia",
+        "country": "",
+        "url": "https://www.ebrd.com/work-with-us/procurement.html",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.ebrd.com/"
     },
-
     {
-        "name": "EIB",
-        "region": "Global",
+        "name": "EIB — European Investment Bank",
+        "region": "Europa",
+        "country": "",
+        "url": "https://www.eib.org/en/projects/procurement/index.htm",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.eib.org/"
     },
-
     {
-        "name": "African Development Bank",
+        "name": "Oman — Tender Board",
+        "region": "Ásia",
+        "country": "Omã",
+        "url": "https://etendering.tenderboard.gov.om/",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "Etimad — Arábia Saudita",
+        "region": "Ásia",
+        "country": "Arábia Saudita",
+        "url": "https://tenders.etimad.sa/",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "UAE — Federal Procurement",
+        "region": "Ásia",
+        "country": "Emirados Árabes Unidos",
+        "url": "https://mof.gov.ae/",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "Qatar — Government Procurement",
+        "region": "Ásia",
+        "country": "Qatar",
+        "url": "https://monaqasat.mof.gov.qa/",
+        "type": "portal",
+        "automatic": False,
+    },
+    {
+        "name": "Maroc — Marchés Publics",
         "region": "África",
+        "country": "Marrocos",
+        "url": "https://www.marchespublics.gov.ma/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.afdb.org/"
     },
-
     {
-        "name": "AfDB Procurement Notices",
+        "name": "Uganda — eGP",
         "region": "África",
+        "country": "Uganda",
+        "url": "https://egpuganda.go.ug/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.afdb.org/en/projects-and-operations/procurement"
     },
-
     {
-        "name": "Uganda",
+        "name": "Kenya — Public Procurement",
         "region": "África",
+        "country": "Quénia",
+        "url": "https://www.treasury.go.ke/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.ppda.go.ug/"
     },
-
     {
-        "name": "Kenya",
+        "name": "Tanzania — PPRA",
         "region": "África",
+        "country": "Tanzânia",
+        "url": "https://www.ppra.go.tz/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.tenders.go.ke/"
     },
-
     {
-        "name": "Tanzania",
+        "name": "Moçambique — Contratação Pública",
         "region": "África",
+        "country": "Moçambique",
+        "url": "https://www.ufsa.gov.mz/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.ppra.go.tz/"
     },
-
-    {
-        "name": "Mozambique",
-        "region": "África",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://www.ufsa.gov.mz/"
-    },
-
-    {
-        "name": "Morocco",
-        "region": "África",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://www.marchespublics.gov.ma/"
-    },
-
-    {
-        "name": "Oman",
-        "region": "Médio Oriente",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://etendering.tenderboard.gov.om/"
-    },
-
-    {
-        "name": "Saudi Arabia Etimad",
-        "region": "Médio Oriente",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://tenders.etimad.sa/"
-    },
-
-    {
-        "name": "UAE",
-        "region": "Médio Oriente",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://www.mof.gov.ae/"
-    },
-
-    {
-        "name": "Qatar",
-        "region": "Médio Oriente",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://monaqasat.mof.gov.qa/"
-    },
-
-    {
-        "name": "SAM.gov",
-        "region": "Américas",
-        "type": "portal",
-        "automatic": False,
-        "url": "https://sam.gov/"
-    },
-
     {
         "name": "ChileCompra",
-        "region": "Américas",
+        "region": "América",
+        "country": "Chile",
+        "url": "https://www.mercadopublico.cl/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.mercadopublico.cl/"
     },
-
     {
-        "name": "Compras Brasil",
-        "region": "Américas",
+        "name": "Brasil — Compras.gov.br",
+        "region": "América",
+        "country": "Brasil",
+        "url": "https://www.gov.br/compras/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.gov.br/compras/"
     },
-
     {
-        "name": "IDB",
-        "region": "Américas",
+        "name": "IDB — Inter-American Development Bank",
+        "region": "América",
+        "country": "",
+        "url": "https://www.iadb.org/en/how-we-work/working-us/procurement",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.iadb.org/"
     },
-
     {
-        "name": "Asian Development Bank",
+        "name": "ADB — Asian Development Bank",
         "region": "Ásia",
+        "country": "",
+        "url": "https://www.adb.org/work-with-us/procurement",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.adb.org/"
     },
-
     {
-        "name": "Australia",
-        "region": "Oceânia",
+        "name": "AusTender — Austrália",
+        "region": "Ásia / Oceânia",
+        "country": "Austrália",
+        "url": "https://www.tenders.gov.au/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.tenders.gov.au/"
     },
-
     {
-        "name": "New Zealand",
-        "region": "Oceânia",
+        "name": "NZ GETS — Nova Zelândia",
+        "region": "Ásia / Oceânia",
+        "country": "Nova Zelândia",
+        "url": "https://www.gets.govt.nz/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.gets.govt.nz/"
     },
-
     {
-        "name": "Global Procurement",
-        "region": "Global",
+        "name": "Red Eléctrica / Redeia",
+        "region": "Europa",
+        "country": "Espanha",
+        "url": "https://www.ree.es/",
         "type": "portal",
         "automatic": False,
-        "url": "https://www.devbusiness.un.org/"
     },
 ]
 
-
 # ============================================================
-# TERMOS DE PESQUISA
+# TERMOS
 # ============================================================
 
 DEFAULT_TERMS = [
     "archaeology",
     "archaeological",
-    "archaeological monitoring",
-    "archaeological excavation",
-    "archaeological services",
-    "archaeological survey",
-    "archaeological assessment",
-    "archaeological investigation",
-    "archaeological works",
-    "excavation",
-    "cultural heritage",
-    "heritage",
-    "historic environment",
-    "chance finds",
-    "heritage management",
-    "unesco",
-    "monument",
-    "arqueologia",
-    "arqueológico",
-    "arqueológica",
-    "património cultural",
-    "patrimonio cultural",
-    "archéologie",
-    "archéologique",
-    "patrimoine culturel"
-]
-
-
-DIRECT_ARCHAEOLOGY_TERMS = [
-
-    "archaeology",
-    "archaeological",
-    "archaeologic",
-    "archaeological monitoring",
-    "archaeological excavation",
-    "archaeological services",
-    "archaeological survey",
-    "archaeological assessment",
-    "archaeological investigation",
-    "archaeological works",
-    "archaeological study",
-    "archaeological studies",
-    "archaeological research",
-    "archaeological watching brief",
-    "archaeological watching",
-    "archaeological evaluation",
-    "archaeological impact assessment",
-    "archaeological fieldwork",
-    "archaeological supervision",
-    "archaeological consultancy",
-    "archaeological consultant",
     "archaeologist",
-    "archaeologists",
-
+    "archaeological excavation",
+    "archaeological monitoring",
+    "archaeological survey",
+    "archaeological investigation",
+    "archaeological services",
+    "cultural heritage",
+    "heritage assessment",
+    "heritage impact assessment",
+    "historic environment",
+    "chance finds",
     "archéologie",
     "archéologique",
-    "archéologiques",
-
+    "fouilles archéologiques",
+    "patrimoine culturel",
     "arqueologia",
     "arqueológico",
     "arqueológica",
-    "arqueológicos",
-    "arqueológicas",
-    "serviços de arqueologia",
-    "servicos de arqueologia",
     "escavação arqueológica",
-    "escavacao arqueologica",
-
-    "património arqueológico",
-    "patrimonio arqueologico"
-]
-
-
-HERITAGE_TERMS = [
-    "cultural heritage",
-    "heritage management",
-    "heritage assessment",
-    "heritage conservation",
-    "heritage protection",
-    "historic environment",
-    "historical heritage",
-    "built heritage",
-    "archaeological heritage",
-    "heritage impact assessment",
-    "chance finds",
-    "chance find",
-    "cultural property",
-    "cultural resources",
-    "monument",
-    "unesco",
+    "acompanhamento arqueológico",
     "património cultural",
     "patrimonio cultural",
-    "património histórico",
-    "patrimonio historico",
-    "patrimoine culturel",
-    "patrimoine historique"
+    "archäologie",
+    "archäologisch",
 ]
-
 
 MAJOR_PROJECT_TERMS = [
     "railway",
     "rail",
     "road",
     "highway",
+    "motorway",
     "mine",
     "mining",
-    "copper",
-    "lithium",
     "oil",
     "gas",
-    "lng",
     "pipeline",
     "airport",
     "port",
     "dam",
-    "hydroelectric",
-    "solar",
-    "wind",
+    "hydropower",
     "energy",
-    "refinery",
+    "power line",
+    "transmission line",
     "corridor",
     "metro",
     "subway",
-    "transmission line",
-    "power line"
+    "wind farm",
+    "solar farm",
+    "photovoltaic",
+    "infrastructure",
+    "construction",
+    "industrial",
+    "infrastructures",
+    "ferroviaire",
+    "route",
+    "autoroute",
+    "mine",
+    "pipeline",
+    "aéroport",
+    "port",
+    "barrage",
+    "énergie",
+    "infrastructure",
+    "ferrovia",
+    "rodovia",
+    "aeroporto",
+    "porto",
+    "barragem",
+    "energia",
 ]
-
 
 ARCHAEOLOGY_CPVS = {
     "71351914",
@@ -439,29 +356,833 @@ ARCHAEOLOGY_CPVS = {
     "71351900",
     "71351720",
     "71351811",
-    "45112450"
+    "71351730",
 }
 
-
-NON_ARCHAEOLOGY_CPV_PREFIXES = {
-    "720",
-    "480",
-    "500",
-    "600",
-    "630",
-    "640",
-    "650",
-    "660",
-    "700",
-    "730",
-    "750",
-    "790",
-    "800",
-    "850",
-    "900",
-    "920",
-    "980"
+# 45112450 = excavation work
+# Não é considerado, isoladamente, um CPV arqueológico.
+GENERAL_EXCAVATION_CPV = {
+    "45112450",
 }
+
+# ============================================================
+# MAPAS DE PAÍSES
+# ============================================================
+
+COUNTRY_MAP = {
+    "PT": "Portugal",
+    "ES": "Espanha",
+    "FR": "França",
+    "DE": "Alemanha",
+    "IT": "Itália",
+    "BE": "Bélgica",
+    "NL": "Países Baixos",
+    "LU": "Luxemburgo",
+    "IE": "Irlanda",
+    "AT": "Áustria",
+    "PL": "Polónia",
+    "CZ": "Chéquia",
+    "SK": "Eslováquia",
+    "HU": "Hungria",
+    "RO": "Roménia",
+    "BG": "Bulgária",
+    "HR": "Croácia",
+    "SI": "Eslovénia",
+    "SE": "Suécia",
+    "FI": "Finlândia",
+    "DK": "Dinamarca",
+    "EE": "Estónia",
+    "LV": "Letónia",
+    "LT": "Lituânia",
+    "GR": "Grécia",
+    "CY": "Chipre",
+    "MT": "Malta",
+    "NO": "Noruega",
+    "IS": "Islândia",
+    "CH": "Suíça",
+    "UK": "Reino Unido",
+
+    "MA": "Marrocos",
+    "DZ": "Argélia",
+    "TN": "Tunísia",
+    "EG": "Egito",
+    "ZA": "África do Sul",
+    "KE": "Quénia",
+    "UG": "Uganda",
+    "TZ": "Tanzânia",
+    "MZ": "Moçambique",
+    "NG": "Nigéria",
+    "GH": "Gana",
+    "ET": "Etiópia",
+
+    "US": "Estados Unidos",
+    "CA": "Canadá",
+    "MX": "México",
+    "BR": "Brasil",
+    "CL": "Chile",
+    "CO": "Colômbia",
+    "PE": "Peru",
+    "AR": "Argentina",
+    "UY": "Uruguai",
+    "PY": "Paraguai",
+
+    "SA": "Arábia Saudita",
+    "AE": "Emirados Árabes Unidos",
+    "QA": "Qatar",
+    "OM": "Omã",
+    "JO": "Jordânia",
+    "IL": "Israel",
+    "TR": "Turquia",
+    "IN": "Índia",
+    "PK": "Paquistão",
+    "BD": "Bangladesh",
+    "LK": "Sri Lanka",
+    "CN": "China",
+    "JP": "Japão",
+    "KR": "Coreia do Sul",
+    "ID": "Indonésia",
+    "MY": "Malásia",
+    "TH": "Tailândia",
+    "VN": "Vietname",
+
+    "AU": "Austrália",
+    "NZ": "Nova Zelândia",
+}
+
+ISO3_MAP = {
+    "PRT": "Portugal",
+    "ESP": "Espanha",
+    "FRA": "França",
+    "DEU": "Alemanha",
+    "ITA": "Itália",
+    "BEL": "Bélgica",
+    "NLD": "Países Baixos",
+    "LUX": "Luxemburgo",
+    "IRL": "Irlanda",
+    "AUT": "Áustria",
+    "POL": "Polónia",
+    "CZE": "Chéquia",
+    "SVK": "Eslováquia",
+    "HUN": "Hungria",
+    "ROU": "Roménia",
+    "BGR": "Bulgária",
+    "HRV": "Croácia",
+    "SVN": "Eslovénia",
+    "SWE": "Suécia",
+    "FIN": "Finlândia",
+    "DNK": "Dinamarca",
+    "EST": "Estónia",
+    "LVA": "Letónia",
+    "LTU": "Lituânia",
+    "GRC": "Grécia",
+    "CYP": "Chipre",
+    "MLT": "Malta",
+    "NOR": "Noruega",
+    "ISL": "Islândia",
+    "CHE": "Suíça",
+    "GBR": "Reino Unido",
+
+    "MAR": "Marrocos",
+    "DZA": "Argélia",
+    "TUN": "Tunísia",
+    "EGY": "Egito",
+    "ZAF": "África do Sul",
+    "KEN": "Quénia",
+    "UGA": "Uganda",
+    "TZA": "Tanzânia",
+    "MOZ": "Moçambique",
+    "NGA": "Nigéria",
+    "GHA": "Gana",
+    "ETH": "Etiópia",
+
+    "USA": "Estados Unidos",
+    "CAN": "Canadá",
+    "MEX": "México",
+    "BRA": "Brasil",
+    "CHL": "Chile",
+    "COL": "Colômbia",
+    "PER": "Peru",
+    "ARG": "Argentina",
+    "URY": "Uruguai",
+    "PRY": "Paraguai",
+
+    "SAU": "Arábia Saudita",
+    "ARE": "Emirados Árabes Unidos",
+    "QAT": "Qatar",
+    "OMN": "Omã",
+    "JOR": "Jordânia",
+    "ISR": "Israel",
+    "TUR": "Turquia",
+    "IND": "Índia",
+    "PAK": "Paquistão",
+    "BGD": "Bangladesh",
+    "LKA": "Sri Lanka",
+    "CHN": "China",
+    "JPN": "Japão",
+    "KOR": "Coreia do Sul",
+    "IDN": "Indonésia",
+    "MYS": "Malásia",
+    "THA": "Tailândia",
+    "VNM": "Vietname",
+
+    "AUS": "Austrália",
+    "NZL": "Nova Zelândia",
+}
+
+# ============================================================
+# UTILITÁRIOS DE TEXTO
+# ============================================================
+
+def normalize_text(value):
+    if value is None:
+        return ""
+
+    if not isinstance(value, str):
+        value = choose_multilingual_text(value)
+
+    value = repair_mojibake(value)
+
+    value = html.unescape(value)
+
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(
+        c for c in value
+        if not unicodedata.combining(c)
+    )
+
+    value = value.lower()
+    value = re.sub(r"\s+", " ", value)
+
+    return value.strip()
+
+
+def repair_mojibake(value):
+    """
+    Corrige situações do tipo:
+    Ã¡ -> á
+    â€” -> —
+    ItÃ¡lia -> Itália
+
+    Tenta no máximo duas vezes para evitar alterar
+    texto legítimo.
+    """
+
+    if not isinstance(value, str):
+        return value
+
+    current = value
+
+    for _ in range(2):
+        if not any(
+            token in current
+            for token in ("Ã", "Â", "â", "ð", "�")
+        ):
+            break
+
+        try:
+            candidate = current.encode(
+                "latin1"
+            ).decode("utf-8")
+        except Exception:
+            break
+
+        if candidate == current:
+            break
+
+        current = candidate
+
+    return current
+
+
+def choose_multilingual_text(value):
+    """
+    Extrai texto real de estruturas TED multilingues.
+
+    Aceita:
+    - string
+    - lista de strings
+    - dict
+    - lista de dicts
+    """
+
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return repair_mojibake(value)
+
+    if isinstance(value, list):
+        # Primeiro procura objetos com language/text
+        for item in value:
+            if isinstance(item, dict):
+                lang = normalize_text(
+                    item.get("language")
+                    or item.get("lang")
+                    or item.get("language-code")
+                    or ""
+                )
+
+                text_value = (
+                    item.get("text")
+                    or item.get("value")
+                    or item.get("content")
+                    or ""
+                )
+
+                if text_value and lang in {
+                    "eng",
+                    "en",
+                    "english",
+                }:
+                    return choose_multilingual_text(text_value)
+
+        for item in value:
+            result = choose_multilingual_text(item)
+            if result:
+                return result
+
+        return ""
+
+    if isinstance(value, dict):
+        # TED costuma usar códigos linguísticos como chaves.
+        preferred_keys = [
+            "eng",
+            "en",
+            "english",
+            "fra",
+            "fr",
+            "fre",
+            "deu",
+            "de",
+            "ita",
+            "it",
+            "spa",
+            "es",
+            "por",
+            "pt",
+        ]
+
+        for key in preferred_keys:
+            if key in value:
+                result = choose_multilingual_text(value[key])
+                if result:
+                    return result
+
+        # Estrutura language/text
+        for key in (
+            "text",
+            "value",
+            "content",
+            "title",
+            "name",
+            "description",
+        ):
+            if key in value:
+                result = choose_multilingual_text(value[key])
+                if result:
+                    return result
+
+        # Último recurso: primeiro valor textual
+        for item in value.values():
+            result = choose_multilingual_text(item)
+            if result:
+                return result
+
+        return ""
+
+    return repair_mojibake(str(value))
+
+
+def flatten(value):
+    return choose_multilingual_text(value)
+
+
+def clean_text(value):
+    value = choose_multilingual_text(value)
+    value = repair_mojibake(value)
+    value = html.unescape(value)
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+# ============================================================
+# DATAS
+# ============================================================
+
+def cutoff_date():
+    return date.today() - timedelta(days=PERIOD_DAYS)
+
+
+def parse_date(value):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, date):
+        return value
+
+    value = choose_multilingual_text(value).strip()
+
+    if not value:
+        return None
+
+    value = value[:10]
+
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+    ):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except Exception:
+            pass
+
+    return None
+
+
+def date_string(value):
+    d = parse_date(value)
+    return d.isoformat() if d else ""
+
+
+# ============================================================
+# PAÍSES
+# ============================================================
+
+def country_from_code(value):
+    value = choose_multilingual_text(value).strip().upper()
+
+    if value in COUNTRY_MAP:
+        return COUNTRY_MAP[value]
+
+    if value in ISO3_MAP:
+        return ISO3_MAP[value]
+
+    return repair_mojibake(value)
+
+
+def extract_country(item):
+    candidates = [
+        item.get("buyer-country"),
+        item.get("buyerCountry"),
+        item.get("country"),
+        item.get("country-code"),
+        item.get("buyer_country"),
+    ]
+
+    for candidate in candidates:
+        text = choose_multilingual_text(candidate).strip()
+
+        if not text:
+            continue
+
+        code = text.upper()
+
+        if code in COUNTRY_MAP:
+            return COUNTRY_MAP[code]
+
+        if code in ISO3_MAP:
+            return ISO3_MAP[code]
+
+        return repair_mojibake(text)
+
+    return ""
+
+
+def region_from_country(country):
+    n = normalize_text(country)
+
+    europe = {
+        "portugal", "espanha", "franca", "alemanha", "italia",
+        "belgica", "paises baixos", "irlanda", "austria",
+        "polonia", "chequia", "eslovaquia", "hungria",
+        "romenia", "bulgaria", "croacia", "eslovenia",
+        "suecia", "finlandia", "dinamarca", "estonia",
+        "letonia", "lituania", "grecia", "chipre", "malta",
+        "noruega", "islandia", "suica", "reino unido",
+    }
+
+    africa = {
+        "marrocos", "argelia", "tunisia", "egito",
+        "africa do sul", "quenia", "uganda", "tanzania",
+        "mocambique", "nigeria", "gana", "etiopia",
+    }
+
+    america = {
+        "estados unidos", "canada", "mexico", "brasil",
+        "chile", "colombia", "peru", "argentina",
+        "uruguai", "paraguai",
+    }
+
+    asia = {
+        "arabia saudita", "emirados arabes unidos", "qatar",
+        "oma", "jordania", "israel", "turquia", "india",
+        "paquistao", "bangladesh", "sri lanka", "china",
+        "japao", "coreia do sul", "indonesia", "malasia",
+        "tailandia", "vietname",
+    }
+
+    oceania = {
+        "australia", "nova zelandia",
+    }
+
+    if n in europe:
+        return "Europa"
+
+    if n in africa:
+        return "África"
+
+    if n in america:
+        return "América"
+
+    if n in asia:
+        return "Ásia"
+
+    if n in oceania:
+        return "Oceânia"
+
+    return "Global"
+
+
+# ============================================================
+# CPV
+# ============================================================
+
+def normalize_cpvs(value):
+    result = []
+
+    if value is None:
+        return result
+
+    if isinstance(value, str):
+        values = re.findall(r"\d{8}", value)
+    elif isinstance(value, list):
+        values = []
+        for item in value:
+            values.extend(
+                re.findall(
+                    r"\d{8}",
+                    choose_multilingual_text(item)
+                )
+            )
+    elif isinstance(value, dict):
+        values = []
+        for item in value.values():
+            values.extend(
+                re.findall(
+                    r"\d{8}",
+                    choose_multilingual_text(item)
+                )
+            )
+    else:
+        values = re.findall(r"\d{8}", str(value))
+
+    for cpv in values:
+        if cpv not in result:
+            result.append(cpv)
+
+    return result
+
+
+# ============================================================
+# CLASSIFICAÇÃO
+# ============================================================
+
+DIRECT_TERMS = [
+    "archaeology",
+    "archaeological",
+    "archaeologist",
+    "archaeological excavation",
+    "archaeological monitoring",
+    "archaeological survey",
+    "archaeological investigation",
+    "archaeological services",
+    "archéologie",
+    "archéologique",
+    "fouilles archéologiques",
+    "arqueologia",
+    "arqueológico",
+    "arqueológica",
+    "escavação arqueológica",
+    "acompanhamento arqueológico",
+    "archäologie",
+    "archäologisch",
+]
+
+HERITAGE_TERMS = [
+    "cultural heritage",
+    "heritage assessment",
+    "heritage impact assessment",
+    "historic environment",
+    "historical environment",
+    "built heritage",
+    "archaeological heritage",
+    "heritage management",
+    "chance finds",
+    "património cultural",
+    "patrimonio cultural",
+    "avaliação patrimonial",
+    "patrimoine culturel",
+    "patrimoine archeologique",
+    "patrimoine historique",
+    "heritage",
+]
+
+MAJOR_TERMS_NORMALIZED = [
+    normalize_text(x)
+    for x in MAJOR_PROJECT_TERMS
+]
+
+DIRECT_TERMS_NORMALIZED = [
+    normalize_text(x)
+    for x in DIRECT_TERMS
+]
+
+HERITAGE_TERMS_NORMALIZED = [
+    normalize_text(x)
+    for x in HERITAGE_TERMS
+]
+
+
+def contains_any(text, terms):
+    text = normalize_text(text)
+
+    for term in terms:
+        if term and term in text:
+            return True
+
+    return False
+
+
+def classify_result(title, description, cpvs):
+    """
+    Regra fundamental:
+
+    1. Texto explicitamente arqueológico:
+       -> Arqueologia direta
+
+    2. Património/heritage:
+       -> Património / potencial arqueológico
+
+    3. CPV arqueológico sozinho:
+       -> NÃO basta.
+
+    Isto evita falsos positivos como:
+    "serviços de água" com dezenas de CPV,
+    onde por acaso aparece 71351914.
+    """
+
+    title_n = normalize_text(title)
+    description_n = normalize_text(description)
+
+    combined = f"{title_n} {description_n}".strip()
+
+    cpvs = set(normalize_cpvs(cpvs))
+
+    direct_text = contains_any(
+        combined,
+        DIRECT_TERMS_NORMALIZED
+    )
+
+    heritage_text = contains_any(
+        combined,
+        HERITAGE_TERMS_NORMALIZED
+    )
+
+    major = contains_any(
+        combined,
+        MAJOR_TERMS_NORMALIZED
+    )
+
+    cpv_direct = bool(
+        cpvs.intersection(ARCHAEOLOGY_CPVS)
+    )
+
+    # --------------------------------------------------------
+    # ARQUEOLOGIA DIRETA
+    # --------------------------------------------------------
+
+    if direct_text:
+        score = 100
+
+        if cpv_direct:
+            score += 15
+
+        if major:
+            score += 10
+
+        return (
+            "Arqueologia direta",
+            min(score, 100)
+        )
+
+    # --------------------------------------------------------
+    # PATRIMÓNIO
+    # --------------------------------------------------------
+
+    if heritage_text:
+        score = 70
+
+        if cpv_direct:
+            score += 15
+
+        if major:
+            score += 10
+
+        return (
+            "Património / potencial arqueológico",
+            min(score, 95)
+        )
+
+    # --------------------------------------------------------
+    # CPV ARQUEOLÓGICO ISOLADO
+    # --------------------------------------------------------
+    #
+    # Não classificamos como arqueologia.
+    # Evita falsos positivos.
+    #
+
+    return ("Outro", 0)
+
+
+# ============================================================
+# LIMPEZA DE RESULTADOS
+# ============================================================
+
+def normalize_result(result):
+    if not isinstance(result, dict):
+        return None
+
+    title = clean_text(
+        result.get("title", "")
+    )
+
+    description = clean_text(
+        result.get("description", "")
+    )
+
+    buyer = clean_text(
+        result.get("buyer", "")
+    )
+
+    country = clean_text(
+        result.get("country", "")
+    )
+
+    source = clean_text(
+        result.get("source", "")
+    )
+
+    url = clean_text(
+        result.get("url", "")
+    )
+
+    cpv = normalize_cpvs(
+        result.get("cpv", [])
+    )
+
+    category = clean_text(
+        result.get("category", "")
+    )
+
+    score = result.get("score", 0)
+
+    try:
+        score = int(score)
+    except Exception:
+        score = 0
+
+    return {
+        "title": title,
+        "buyer": buyer,
+        "country": country,
+        "date": date_string(result.get("date")),
+        "deadline": date_string(result.get("deadline")),
+        "cpv": cpv,
+        "category": category,
+        "score": score,
+        "source": source,
+        "url": url,
+        "description": description,
+    }
+
+
+def recent_enough(result):
+    """
+    Mantém apenas resultados publicados nos últimos
+    PERIOD_DAYS dias.
+
+    Se não houver data, não eliminamos automaticamente,
+    porque algumas fontes não disponibilizam a data.
+    """
+
+    d = parse_date(result.get("date"))
+
+    if not d:
+        return True
+
+    return d >= cutoff_date()
+
+
+def dedupe_results(results):
+    unique = {}
+    output = []
+
+    for item in results:
+        normalized = normalize_result(item)
+
+        if not normalized:
+            continue
+
+        if not normalized["title"]:
+            continue
+
+        if not recent_enough(normalized):
+            continue
+
+        key = (
+            normalize_text(normalized["title"]),
+            normalize_text(normalized["buyer"]),
+            normalized["date"],
+            normalized["country"],
+        )
+
+        if key in unique:
+            old = unique[key]
+
+            if normalized["score"] > old["score"]:
+                unique[key] = normalized
+
+            continue
+
+        unique[key] = normalized
+        output.append(normalized)
+
+    output = list(unique.values())
+
+    output.sort(
+        key=lambda x: (
+            -int(x.get("score", 0)),
+            x.get("date", ""),
+        ),
+        reverse=False
+    )
+
+    # Ordenação final: score maior e data mais recente
+    output.sort(
+        key=lambda x: (
+            -int(x.get("score", 0)),
+            x.get("date", ""),
+        ),
+        reverse=True
+    )
+
+    return output
 
 
 # ============================================================
@@ -472,725 +1193,81 @@ TED_FIELDS = [
     "publication-number",
     "publication-date",
     "notice-title",
-    "official-language",
     "buyer-name",
     "buyer-country",
     "classification-cpv",
     "notice-type",
-    "deadline",
     "deadline-date-lot",
-    "deadline-receipt-request",
     "deadline-receipt-tender-date-lot",
-    "deadline-receipt-tender-time-lot",
+    "deadline-receipt-request-date-lot",
     "description-proc",
-    "description-lot"
+    "description-lot",
+    "place-of-performance",
+    "official-language",
 ]
 
 
-# ============================================================
-# PAÍSES
-# ============================================================
-
-COUNTRY_NAMES = {
-
-    # Europa
-    "PT": "Portugal",
-    "ES": "Espanha",
-    "FR": "França",
-    "DE": "Alemanha",
-    "IT": "Itália",
-    "NL": "Países Baixos",
-    "BE": "Bélgica",
-    "IE": "Irlanda",
-    "AT": "Áustria",
-    "PL": "Polónia",
-    "CZ": "Chéquia",
-    "SK": "Eslováquia",
-    "HU": "Hungria",
-    "RO": "Roménia",
-    "BG": "Bulgária",
-    "GR": "Grécia",
-    "SE": "Suécia",
-    "FI": "Finlândia",
-    "DK": "Dinamarca",
-    "NO": "Noruega",
-    "CH": "Suíça",
-    "UK": "Reino Unido",
-
-    # África
-    "MA": "Marrocos",
-    "DZ": "Argélia",
-    "TN": "Tunísia",
-    "EG": "Egipto",
-    "ZA": "África do Sul",
-    "MZ": "Moçambique",
-    "AO": "Angola",
-    "KE": "Quénia",
-    "UG": "Uganda",
-    "TZ": "Tanzânia",
-
-    # Américas
-    "US": "Estados Unidos",
-    "CA": "Canadá",
-    "MX": "México",
-    "BR": "Brasil",
-    "CL": "Chile",
-    "CO": "Colômbia",
-    "AR": "Argentina",
-
-    # Médio Oriente
-    "SA": "Arábia Saudita",
-    "AE": "Emirados Árabes Unidos",
-    "QA": "Qatar",
-    "OM": "Omã",
-
-    # Ásia
-    "IN": "Índia",
-    "CN": "China",
-    "JP": "Japão",
-    "KR": "Coreia do Sul",
-
-    # Oceânia
-    "AU": "Austrália",
-    "NZ": "Nova Zelândia"
-}
-
-
-COUNTRY_NAMES_3 = {
-    "PRT": "Portugal",
-    "ESP": "Espanha",
-    "FRA": "França",
-    "DEU": "Alemanha",
-    "ITA": "Itália",
-    "NLD": "Países Baixos",
-    "BEL": "Bélgica",
-    "IRL": "Irlanda",
-    "AUT": "Áustria",
-    "POL": "Polónia",
-    "CZE": "Chéquia",
-    "SVK": "Eslováquia",
-    "HUN": "Hungria",
-    "ROU": "Roménia",
-    "BGR": "Bulgária",
-    "GRC": "Grécia",
-    "SWE": "Suécia",
-    "FIN": "Finlândia",
-    "DNK": "Dinamarca",
-    "NOR": "Noruega",
-    "CHE": "Suíça",
-    "GBR": "Reino Unido",
-
-    "MAR": "Marrocos",
-    "DZA": "Argélia",
-    "TUN": "Tunísia",
-    "EGY": "Egipto",
-    "ZAF": "África do Sul",
-    "MOZ": "Moçambique",
-    "AGO": "Angola",
-    "KEN": "Quénia",
-    "UGA": "Uganda",
-    "TZA": "Tanzânia",
-
-    "USA": "Estados Unidos",
-    "CAN": "Canadá",
-    "MEX": "México",
-    "BRA": "Brasil",
-    "CHL": "Chile",
-    "COL": "Colômbia",
-    "ARG": "Argentina",
-
-    "SAU": "Arábia Saudita",
-    "ARE": "Emirados Árabes Unidos",
-    "QAT": "Qatar",
-    "OMN": "Omã",
-
-    "IND": "Índia",
-    "CHN": "China",
-    "JPN": "Japão",
-    "KOR": "Coreia do Sul",
-
-    "AUS": "Austrália",
-    "NZL": "Nova Zelândia"
-}
-
-
-# ============================================================
-# UTILITÁRIOS
-# ============================================================
-
-def today_utc():
-    return date.today()
-
-
-def cutoff_date():
-    return today_utc() - timedelta(days=PERIOD_DAYS)
-
-
-def flatten(value):
-    if value is None:
-        return ""
-
-    if isinstance(value, str):
-        return value
-
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-
-    if isinstance(value, list):
-        return " ".join(flatten(x) for x in value)
-
-    if isinstance(value, dict):
-        return " ".join(
-            f"{k} {flatten(v)}"
-            for k, v in value.items()
-        )
-
-    return str(value)
-
-
-def repair_mojibake(text):
-    if not isinstance(text, str):
-        return text
-
-    if "Ã" not in text and "Â" not in text and "â" not in text:
-        return text
-
-    try:
-        repaired = text.encode("latin1").decode("utf-8")
-        return repaired
-    except Exception:
-        return text
-
-
-def repair_structure(value):
-    if isinstance(value, str):
-        return repair_mojibake(value)
-
-    if isinstance(value, list):
-        return [repair_structure(x) for x in value]
-
-    if isinstance(value, dict):
-        return {
-            k: repair_structure(v)
-            for k, v in value.items()
-        }
-
-    return value
-
-
-def clean_query(term):
-    if term is None:
-        return ""
-
-    term = str(term).strip()
-
-    term = re.sub(r"\s+", " ", term)
-
-    return term
-
-
-def normalize_text(text):
-    text = repair_mojibake(flatten(text))
-
-    text = unicodedata.normalize(
-        "NFKD",
-        text
-    )
-
-    text = "".join(
-        c for c in text
-        if not unicodedata.combining(c)
-    )
-
-    return text.lower()
-
-
-def build_ted_query(term):
-
-    term = clean_query(term)
-
-    if not term:
-        return ""
-
-    if " " not in term:
-        return f"FT~{term}"
-
-    escaped = term.replace('"', '\\"')
-
-    return f'FT~"{escaped}"'
-
-
-def choose_multilingual_text(value):
-
-    if isinstance(value, str):
-        return value
-
-    if isinstance(value, list):
-
-        for item in value:
-
-            if isinstance(item, dict):
-
-                for key in [
-                    "text",
-                    "value",
-                    "content",
-                    "title"
-                ]:
-                    if item.get(key):
-                        return item[key]
-
-            elif isinstance(item, str):
-                return item
-
-    if isinstance(value, dict):
-
-        for key in [
-            "text",
-            "value",
-            "content",
-            "title"
-        ]:
-            if value.get(key):
-                return value[key]
-
-        for key, val in value.items():
-
-            if isinstance(val, str):
-                return val
-
-    return flatten(value)
-
-
-def clean_ted_title(title, official_language=""):
-
-    title = choose_multilingual_text(title)
-
-    title = repair_mojibake(title)
-
-    title = html.unescape(title)
+def clean_ted_title(value):
+    title = choose_multilingual_text(value)
+    title = clean_text(title)
 
     title = re.sub(
-        r"\s+",
-        " ",
+        r"^\s*(?:[A-Za-z]{2,3})\s*[-:]\s*",
+        "",
         title
-    ).strip()
-
-    if not title:
-        return ""
-
-    # Tentativa de separar títulos TED concatenados
-    title = re.sub(
-        r"\s+(?:EN|FR|DE|ES|PT|IT|NL|PL|EL|BG|RO|CS|SK|HU)\s*[:\-]\s*",
-        " | ",
-        title,
-        flags=re.I
     )
 
-    if len(title) > 600:
-        title = title[:597] + "..."
+    return title.strip()
 
-    return title
 
-
-def parse_date(value):
-
-    if value is None:
-        return ""
-
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-
-    if isinstance(value, date):
-        return value.isoformat()
-
-    value = str(value).strip()
-
-    if not value:
-        return ""
-
-    # ISO
-    try:
-        return datetime.fromisoformat(
-            value.replace("Z", "+00:00")
-        ).date().isoformat()
-    except Exception:
-        pass
-
-    # YYYY-MM-DD
-    match = re.search(
-        r"\b(\d{4}-\d{2}-\d{2})\b",
-        value
-    )
-
-    if match:
-        return match.group(1)
-
-    # DD/MM/YYYY
-    match = re.search(
-        r"\b(\d{2})/(\d{2})/(\d{4})\b",
-        value
-    )
-
-    if match:
-        return (
-            f"{match.group(3)}-"
-            f"{match.group(2)}-"
-            f"{match.group(1)}"
-        )
-
-    return ""
-
-
-def find_date_in_structure(value):
-
-    if isinstance(value, str):
-        parsed = parse_date(value)
-
-        if parsed:
-            return parsed
-
-        return ""
-
-    if isinstance(value, list):
-
-        for item in value:
-
-            result = find_date_in_structure(item)
-
-            if result:
-                return result
-
-        return ""
-
-    if isinstance(value, dict):
-
-        preferred_keys = [
-            "deadline",
-            "deadline-date-lot",
-            "deadline-receipt-request",
-            "deadline-receipt-tender-date-lot",
-            "date",
-            "publication-date"
-        ]
-
-        for key in preferred_keys:
-
-            if key in value:
-
-                result = find_date_in_structure(
-                    value[key]
-                )
-
-                if result:
-                    return result
-
-        for val in value.values():
-
-            result = find_date_in_structure(val)
-
-            if result:
-                return result
-
-    return ""
-
-
-def extract_country(notice):
-
-    candidates = [
-        notice.get("buyer-country"),
-        notice.get("buyerCountry"),
-        notice.get("country"),
-        notice.get("countryCode")
-    ]
-
-    for value in candidates:
-
-        if value:
-
-            value = flatten(value).strip().upper()
-
-            if value in COUNTRY_NAMES:
-                return COUNTRY_NAMES[value]
-
-            if value in COUNTRY_NAMES_3:
-                return COUNTRY_NAMES_3[value]
-
-            if len(value) == 2:
-                return COUNTRY_NAMES.get(
-                    value,
-                    value
-                )
-
-            if len(value) == 3:
-                return COUNTRY_NAMES_3.get(
-                    value,
-                    value
-                )
-
-            return repair_mojibake(value)
-
-    return ""
-
-
-def extract_cpvs(notice):
-
-    cpvs = []
-
-    def collect(value):
-
-        if value is None:
-            return
-
-        if isinstance(value, str):
-
-            matches = re.findall(
-                r"\b\d{8}\b",
-                value
-            )
-
-            cpvs.extend(matches)
-
-        elif isinstance(value, list):
-
-            for item in value:
-                collect(item)
-
-        elif isinstance(value, dict):
-
-            for key, val in value.items():
-
-                if (
-                    "cpv" in key.lower()
-                    or "classification" in key.lower()
-                ):
-                    collect(val)
-
-    collect(notice.get("classification-cpv"))
-
-    collect(notice.get("classificationCpv"))
-
-    collect(notice.get("cpv"))
-
-    collect(notice.get("cpvs"))
-
-    result = []
-
-    for cpv in cpvs:
-
-        cpv = cpv[:8]
-
-        if cpv not in result:
-            result.append(cpv)
-
-    return result
-
-
-def extract_deadline(notice):
-
-    keys = [
-        "deadline",
-        "deadline-date-lot",
-        "deadline-receipt-request",
-        "deadline-receipt-tender-date-lot"
-    ]
-
-    for key in keys:
-
-        if notice.get(key):
-
-            result = find_date_in_structure(
-                notice[key]
-            )
-
-            if result:
-                return result
-
-    return ""
-
-
-# ============================================================
-# CLASSIFICAÇÃO
-# ============================================================
-
-def classify_result(
-    title,
-    description,
-    cpvs,
-    source=""
-):
-
-    text = normalize_text(
-        f"{title} {description}"
-    )
-
-    cpv_direct = False
-
-    for cpv in cpvs:
-
-        cpv = str(cpv)[:8]
-
-        if cpv in ARCHAEOLOGY_CPVS:
-            cpv_direct = True
-            break
-
-    direct = any(
-        normalize_text(term) in text
-        for term in DIRECT_ARCHAEOLOGY_TERMS
-    )
-
-    heritage = any(
-        normalize_text(term) in text
-        for term in HERITAGE_TERMS
-    )
-
-    major = any(
-        normalize_text(term) in text
-        for term in MAJOR_PROJECT_TERMS
-    )
-
-    # --------------------------------------------------------
-    # REGRA FUNDAMENTAL DO RADAR
-    #
-    # Um grande projecto sozinho NÃO é arqueologia.
-    # Só entra se houver evidência arqueológica/patrimonial.
-    # --------------------------------------------------------
-
-    if cpv_direct:
-
-        return "Arqueologia direta", 100
-
-    if direct:
-
-        if major:
-            return (
-                "Arqueologia direta / grande projeto",
-                95
-            )
-
-        return "Arqueologia direta", 90
-
-    if heritage:
-
-        if major:
-            return (
-                "Património / grande projeto",
-                75
-            )
-
-        return (
-            "Património / potencial arqueológico",
-            65
-        )
-
-    # NÃO devolver major sozinho.
-    return "Outro", 0
-
-
-# ============================================================
-# CONVERSÃO DE RESULTADOS
-# ============================================================
-
-def make_result(
-    title="",
-    buyer="",
-    country="",
-    published="",
-    deadline="",
-    cpvs=None,
-    description="",
-    category="Outro",
-    score=0,
-    source="",
-    url=""
-):
-
-    cpvs = cpvs or []
-
-    return {
-        "title": repair_mojibake(
-            html.unescape(str(title or "")).strip()
-        ),
-        "buyer": repair_mojibake(
-            html.unescape(str(buyer or "")).strip()
-        ),
-        "country": repair_mojibake(
-            str(country or "").strip()
-        ),
-        "date": parse_date(published),
-        "deadline": parse_date(deadline),
-        "cpv": cpvs,
-        "category": repair_mojibake(category),
-        "score": score,
-        "source": repair_mojibake(source),
-        "url": url or "",
-        "description": repair_mojibake(
-            html.unescape(
-                str(description or "")
-            ).strip()
-        )
-    }
-
-
-def notice_to_result(notice):
-
-    title = (
-        notice.get("notice-title")
-        or notice.get("noticeTitle")
-        or ""
-    )
-
-    official_language = (
-        notice.get("official-language")
-        or notice.get("officialLanguage")
-        or ""
-    )
-
+def ted_notice_to_result(notice):
     title = clean_ted_title(
-        title,
-        official_language
+        notice.get("notice-title")
+        or notice.get("title")
+        or ""
     )
 
-    buyer = (
+    description = clean_text(
+        notice.get("description-proc")
+        or notice.get("description-lot")
+        or notice.get("description")
+        or ""
+    )
+
+    buyer = clean_text(
         notice.get("buyer-name")
-        or notice.get("buyerName")
+        or notice.get("buyer")
         or ""
     )
 
     country = extract_country(notice)
 
-    cpvs = extract_cpvs(notice)
+    cpvs = normalize_cpvs(
+        notice.get("classification-cpv")
+        or notice.get("cpv")
+        or []
+    )
 
-    deadline = extract_deadline(notice)
-
-    publication_date = (
+    pub_date = (
         notice.get("publication-date")
         or notice.get("publicationDate")
+        or notice.get("date")
         or ""
     )
 
-    description = " ".join([
-        flatten(
-            notice.get("description-proc")
-            or notice.get("descriptionProc")
-            or ""
-        ),
-        flatten(
-            notice.get("description-lot")
-            or notice.get("descriptionLot")
-            or ""
-        )
-    ])
+    deadline = (
+        notice.get("deadline-date-lot")
+        or notice.get("deadline-receipt-tender-date-lot")
+        or notice.get("deadline-receipt-request-date-lot")
+        or notice.get("deadline")
+        or ""
+    )
 
     category, score = classify_result(
         title,
         description,
-        cpvs,
-        "TED"
+        cpvs
     )
-
-    if category == "Outro":
-        return None
 
     publication_number = (
         notice.get("publication-number")
@@ -1198,544 +1275,442 @@ def notice_to_result(notice):
         or ""
     )
 
+    publication_number = clean_text(
+        publication_number
+    )
+
     url = ""
 
     if publication_number:
-
         url = (
-            "https://ted.europa.eu/en/"
-            "notice/-/detail/"
-            f"{publication_number}"
+            "https://ted.europa.eu/en/notice/-/detail/"
+            + publication_number
         )
 
-    return make_result(
-        title=title,
-        buyer=buyer,
-        country=country,
-        published=publication_date,
-        deadline=deadline,
-        cpvs=cpvs,
-        description=description,
-        category=category,
-        score=score,
-        source="TED — Europa",
-        url=url
-    )
-
-
-# ============================================================
-# TED API
-# ============================================================
-
-def query_ted(term):
-
-    query = build_ted_query(term)
-
-    if not query:
-
-        return {
-            "ok": False,
-            "source": "TED",
-            "term": term,
-            "count": 0,
-            "results": [],
-            "error": "query vazia"
-        }
-
-    payload = {
-        "query": query,
-        "fields": TED_FIELDS,
-        "page": 1,
-        "limit": PAGE_SIZE,
-        "scope": "ACTIVE",
-        "checkQuerySyntax": False,
-        "paginationMode": "PAGE_NUMBER"
-    }
-
-    last_error = ""
-
-    for attempt in range(3):
-
-        try:
-
-            response = requests.post(
-                TED_URL,
-                json=payload,
-                timeout=REQUEST_TIMEOUT
-            )
-
-            if response.status_code != 200:
-
-                last_error = (
-                    f"HTTP {response.status_code}: "
-                    f"{response.text[:500]}"
-                )
-
-                time.sleep(1)
-
-                continue
-
-            data = response.json()
-
-            notices = (
-                data.get("notices")
-                or data.get("results")
-                or []
-            )
-
-            results = []
-
-            for notice in notices:
-
-                if not isinstance(notice, dict):
-                    continue
-
-                result = notice_to_result(notice)
-
-                if result:
-                    results.append(result)
-
-            return {
-                "ok": True,
-                "source": "TED",
-                "term": term,
-                "query": query,
-                "count": len(results),
-                "raw_count": len(notices),
-                "results": results
-            }
-
-        except Exception as exc:
-
-            last_error = str(exc)
-
-            time.sleep(1)
+    if not url:
+        url = choose_multilingual_text(
+            notice.get("url")
+            or notice.get("links")
+            or ""
+        )
 
     return {
-        "ok": False,
-        "source": "TED",
-        "term": term,
-        "query": query,
-        "count": 0,
-        "results": [],
-        "error": last_error
+        "title": title,
+        "buyer": buyer,
+        "country": country,
+        "date": date_string(pub_date),
+        "deadline": date_string(deadline),
+        "cpv": cpvs,
+        "category": category,
+        "score": score,
+        "source": "TED — Europa",
+        "url": url,
+        "description": description,
     }
+
+
+def query_ted(term, diagnostics):
+    payload = {
+        "query": f'FT~"{term}"',
+        "pageSize": PAGE_SIZE,
+        "scope": "ACTIVE",
+        "fields": TED_FIELDS,
+    }
+
+    try:
+        response = requests.post(
+            TED_URL,
+            json=payload,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        notices = data.get("notices", [])
+
+        results = []
+
+        for notice in notices:
+            item = ted_notice_to_result(notice)
+
+            if not item:
+                continue
+
+            if item["category"] == "Outro":
+                continue
+
+            if not recent_enough(item):
+                continue
+
+            results.append(item)
+
+        diagnostics.append({
+            "source": "TED",
+            "term": term,
+            "ok": True,
+            "count": len(results),
+            "raw_count": len(notices),
+            "error": "",
+        })
+
+        return results
+
+    except Exception as exc:
+        diagnostics.append({
+            "source": "TED",
+            "term": term,
+            "ok": False,
+            "count": 0,
+            "raw_count": 0,
+            "error": str(exc),
+        })
+
+        return []
 
 
 # ============================================================
 # WORLD BANK
 # ============================================================
 
-def query_world_bank(term):
-
-    params = {
-        "qterm": term,
-        "format": "json",
-        "rows": PAGE_SIZE,
-        "os": 0
-    }
-
+def query_world_bank(term, diagnostics):
     try:
+        params = {
+            "qterm": term,
+            "rows": 100,
+            "format": "json",
+        }
 
         response = requests.get(
             WORLD_BANK_URL,
             params=params,
-            timeout=REQUEST_TIMEOUT
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+            },
         )
 
-        if response.status_code != 200:
-
-            return {
-                "ok": False,
-                "source": "World Bank Procurement",
-                "term": term,
-                "count": 0,
-                "results": [],
-                "error": f"HTTP {response.status_code}"
-            }
+        response.raise_for_status()
 
         data = response.json()
 
-        raw = (
-            data.get("procnotices")
-            or data.get("notices")
-            or data.get("results")
-            or []
-        )
+        rows = []
 
-        if isinstance(raw, dict):
+        if isinstance(data, dict):
+            for key in (
+                "procnotices",
+                "notices",
+                "results",
+                "documents",
+            ):
+                value = data.get(key)
 
-            raw = list(raw.values())
+                if isinstance(value, list):
+                    rows = value
+                    break
+
+                if isinstance(value, dict):
+                    rows = list(value.values())
+                    break
 
         results = []
 
-        for item in raw:
-
-            if not isinstance(item, dict):
+        for row in rows:
+            if not isinstance(row, dict):
                 continue
 
-            title = (
-                item.get("project_name")
-                or item.get("projectName")
-                or item.get("title")
-                or item.get("notice_title")
-                or item.get("noticeTitle")
+            title = clean_text(
+                row.get("bid_description")
+                or row.get("project_name")
+                or row.get("procurement_name")
+                or row.get("notice_title")
+                or row.get("title")
                 or ""
             )
 
-            description = " ".join([
-                flatten(
-                    item.get("description")
-                    or item.get("project_description")
-                    or ""
-                ),
-                flatten(
-                    item.get("procurement_method")
-                    or ""
-                )
-            ])
-
-            buyer = (
-                item.get("buyer")
-                or item.get("borrower")
-                or item.get("agency")
+            description = clean_text(
+                row.get("description")
+                or row.get("bid_description")
                 or ""
             )
 
-            country = (
-                item.get("country")
-                or item.get("country_name")
+            buyer = clean_text(
+                row.get("borrower")
+                or row.get("project_name")
+                or row.get("buyer")
                 or ""
             )
 
-            published = (
-                item.get("publication_date")
-                or item.get("publicationDate")
-                or item.get("date")
+            country = clean_text(
+                row.get("country")
+                or row.get("countryname")
+                or ""
+            )
+
+            cpvs = normalize_cpvs(
+                row.get("cpv")
+                or row.get("classification-cpv")
+                or []
+            )
+
+            pub_date = (
+                row.get("publication_date")
+                or row.get("publicationDate")
+                or row.get("date")
+                or row.get("notice_date")
                 or ""
             )
 
             deadline = (
-                item.get("deadline")
-                or item.get("submission_deadline")
-                or ""
-            )
-
-            url = (
-                item.get("url")
-                or item.get("notice_url")
-                or item.get("project_url")
+                row.get("submission_deadline")
+                or row.get("deadline")
                 or ""
             )
 
             category, score = classify_result(
                 title,
                 description,
-                [],
-                "World Bank Procurement"
+                cpvs
             )
 
-            # Muito importante:
-            # projectos genéricos deixam de aparecer.
             if category == "Outro":
                 continue
 
-            results.append(
-                make_result(
-                    title=title,
-                    buyer=buyer,
-                    country=country,
-                    published=published,
-                    deadline=deadline,
-                    cpvs=[],
-                    description=description,
-                    category=category,
-                    score=score,
-                    source="World Bank Procurement",
-                    url=url
-                )
-            )
+            item = {
+                "title": title,
+                "buyer": buyer,
+                "country": country,
+                "date": date_string(pub_date),
+                "deadline": date_string(deadline),
+                "cpv": cpvs,
+                "category": category,
+                "score": score,
+                "source": "World Bank Procurement",
+                "url": clean_text(
+                    row.get("url")
+                    or row.get("notice_url")
+                    or row.get("web_url")
+                    or ""
+                ),
+                "description": description,
+            }
 
-        return {
-            "ok": True,
+            if recent_enough(item):
+                results.append(item)
+
+        diagnostics.append({
             "source": "World Bank Procurement",
             "term": term,
+            "ok": True,
             "count": len(results),
-            "raw_count": len(raw),
-            "results": results
-        }
+            "raw_count": len(rows),
+            "error": "",
+        })
+
+        return results
 
     except Exception as exc:
-
-        return {
-            "ok": False,
+        diagnostics.append({
             "source": "World Bank Procurement",
             "term": term,
+            "ok": False,
             "count": 0,
-            "results": [],
-            "error": str(exc)
-        }
+            "raw_count": 0,
+            "error": str(exc),
+        })
+
+        return []
 
 
 # ============================================================
-# ÁFRICA DO SUL — OCDS / eTENDERS
+# SOUTH AFRICA eTENDERS / OCDS
 # ============================================================
 
-def extract_ocds_text(value):
-
-    if value is None:
-        return ""
-
-    if isinstance(value, str):
-        return value
-
-    if isinstance(value, list):
-        return " ".join(
-            extract_ocds_text(x)
-            for x in value
-        )
-
-    if isinstance(value, dict):
-        return " ".join(
-            extract_ocds_text(v)
-            for v in value.values()
-        )
-
-    return str(value)
-
-
-def ocds_release_to_result(release):
-
-    if not isinstance(release, dict):
-        return None
-
-    tender = release.get("tender") or {}
-    buyer_data = release.get("buyer") or {}
-    parties = release.get("parties") or []
-
-    title = (
-        tender.get("title")
-        or release.get("title")
-        or ""
-    )
-
-    description = (
-        tender.get("description")
-        or ""
-    )
-
-    buyer = (
-        buyer_data.get("name")
-        or ""
-    )
-
-    if not buyer and isinstance(parties, list):
-
-        for party in parties:
-
-            if not isinstance(party, dict):
-                continue
-
-            roles = party.get("roles") or []
-
-            if "buyer" in roles:
-
-                buyer = (
-                    party.get("name")
-                    or ""
-                )
-
-                break
-
-    country = "África do Sul"
-
-    published = (
-        release.get("date")
-        or tender.get("datePublished")
-        or ""
-    )
-
-    deadline = (
-        tender.get("tenderPeriod", {}).get("endDate")
-        or ""
-    )
-
-    url = (
-        release.get("url")
-        or ""
-    )
-
-    cpvs = []
-
-    items = tender.get("items") or []
-
-    for item in items:
-
-        classification = (
-            item.get("classification")
-            or {}
-        )
-
-        code = classification.get("id")
-
-        if code:
-            cpvs.append(str(code))
-
-    category, score = classify_result(
-        title,
-        description,
-        cpvs,
-        "South Africa eTenders — OCDS"
-    )
-
-    if category == "Outro":
-        return None
-
-    return make_result(
-        title=title,
-        buyer=buyer,
-        country=country,
-        published=published,
-        deadline=deadline,
-        cpvs=cpvs,
-        description=description,
-        category=category,
-        score=score,
-        source="South Africa eTenders — OCDS",
-        url=url
-    )
-
-
-def query_south_africa(term):
-
+def query_south_africa(term, diagnostics):
     try:
-
-        # O endpoint OCDS é público.
-        # A pesquisa local é feita sobre os releases
-        # devolvidos pelo feed.
-
         response = requests.get(
-            SOUTH_AFRICA_OCDS_URL,
+            SOUTH_AFRICA_URL,
             params={
                 "page": 1,
-                "pageSize": 100
+                "pageSize": 100,
             },
-            timeout=REQUEST_TIMEOUT
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+            },
         )
 
-        if response.status_code != 200:
-
-            return {
-                "ok": False,
-                "source": "South Africa eTenders — OCDS",
-                "term": term,
-                "count": 0,
-                "results": [],
-                "error": (
-                    f"HTTP {response.status_code}"
-                )
-            }
+        response.raise_for_status()
 
         data = response.json()
 
         releases = []
 
         if isinstance(data, dict):
+            if isinstance(data.get("releases"), list):
+                releases = data["releases"]
 
-            releases = (
-                data.get("releases")
-                or data.get("results")
-                or data.get("data")
-                or []
-            )
+            elif isinstance(data.get("results"), list):
+                releases = data["results"]
+
+            elif isinstance(data.get("data"), list):
+                releases = data["data"]
 
         elif isinstance(data, list):
-
             releases = data
-
-        wanted = normalize_text(term)
 
         results = []
 
-        for release in releases:
+        term_n = normalize_text(term)
 
+        for release in releases:
             if not isinstance(release, dict):
                 continue
 
-            release_text = normalize_text(
-                extract_ocds_text(release)
+            tender = release.get("tender", {})
+            if not isinstance(tender, dict):
+                tender = {}
+
+            title = clean_text(
+                tender.get("title")
+                or release.get("title")
+                or ""
             )
 
-            # Pesquisa textual interna
-            # para evitar trazer todo o feed.
-            if wanted not in release_text:
+            description = clean_text(
+                tender.get("description")
+                or release.get("description")
+                or ""
+            )
+
+            text = normalize_text(
+                f"{title} {description}"
+            )
+
+            if term_n and term_n not in text:
                 continue
 
-            result = ocds_release_to_result(
-                release
+            classification = tender.get(
+                "classification",
+                {}
             )
 
-            if result:
-                results.append(result)
+            cpvs = normalize_cpvs(
+                classification.get("id")
+                if isinstance(classification, dict)
+                else classification
+            )
 
-        return {
-            "ok": True,
+            buyer = release.get("buyer", {})
+
+            if isinstance(buyer, dict):
+                buyer_name = clean_text(
+                    buyer.get("name", "")
+                )
+            else:
+                buyer_name = clean_text(buyer)
+
+            date_value = (
+                release.get("date")
+                or tender.get("date")
+                or release.get("publishedDate")
+                or ""
+            )
+
+            deadline = (
+                tender.get("tenderPeriod", {})
+                if isinstance(
+                    tender.get("tenderPeriod", {}),
+                    dict
+                )
+                else {}
+            )
+
+            deadline_value = deadline.get(
+                "end",
+                ""
+            )
+
+            category, score = classify_result(
+                title,
+                description,
+                cpvs
+            )
+
+            if category == "Outro":
+                continue
+
+            item = {
+                "title": title,
+                "buyer": buyer_name,
+                "country": "África do Sul",
+                "date": date_string(date_value),
+                "deadline": date_string(deadline_value),
+                "cpv": cpvs,
+                "category": category,
+                "score": score,
+                "source": "South Africa eTenders — OCDS",
+                "url": clean_text(
+                    release.get("url")
+                    or release.get("id")
+                    or ""
+                ),
+                "description": description,
+            }
+
+            if recent_enough(item):
+                results.append(item)
+
+        diagnostics.append({
             "source": "South Africa eTenders — OCDS",
             "term": term,
+            "ok": True,
             "count": len(results),
             "raw_count": len(releases),
-            "results": results
-        }
+            "error": "",
+        })
+
+        return results
 
     except Exception as exc:
-
-        return {
-            "ok": False,
+        diagnostics.append({
             "source": "South Africa eTenders — OCDS",
             "term": term,
+            "ok": False,
             "count": 0,
-            "results": [],
-            "error": str(exc)
-        }
+            "raw_count": 0,
+            "error": str(exc),
+        })
+
+        return []
 
 
 # ============================================================
 # SECOP II — COLÔMBIA
 # ============================================================
 
-def query_colombia_secop(term):
-
+def query_secop(term, diagnostics):
     try:
-
-        # O dataset SECOP II contém dezenas de campos.
-        # A pesquisa é feita através da API Socrata.
-
-        wanted = normalize_text(term)
-
-        # A API permite full-text search através de $q.
         params = {
             "$limit": 100,
-            "$q": term
+            "$q": term,
         }
 
         response = requests.get(
-            COLOMBIA_SECOP_URL,
+            SECOP_URL,
             params=params,
-            timeout=REQUEST_TIMEOUT
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+            },
         )
 
-        if response.status_code != 200:
-
-            return {
-                "ok": False,
-                "source": "SECOP II — Colômbia",
-                "term": term,
-                "count": 0,
-                "results": [],
-                "error": (
-                    f"HTTP {response.status_code}"
-                )
-            }
+        response.raise_for_status()
 
         data = response.json()
 
@@ -1744,290 +1719,463 @@ def query_colombia_secop(term):
 
         results = []
 
-        for item in data:
+        term_n = normalize_text(term)
 
-            if not isinstance(item, dict):
+        for row in data:
+            if not isinstance(row, dict):
                 continue
 
-            title = (
-                item.get(
-                    "nombre_del_procedimiento"
-                )
-                or item.get(
-                    "nombre_procedimiento"
-                )
+            title = clean_text(
+                row.get("nombre_del_procedimiento")
+                or row.get("objeto_del_contrato")
+                or row.get("descripcion_del_proceso")
+                or row.get("title")
                 or ""
             )
 
-            description = (
-                item.get(
-                    "descripci_n_del_procedimiento"
-                )
-                or item.get(
-                    "descripcion_del_procedimiento"
-                )
+            description = clean_text(
+                row.get("descripcion_del_proceso")
+                or row.get("objeto_del_contrato")
                 or ""
             )
 
-            # Segurança adicional:
-            # mesmo que Socrata devolva resultados
-            # pouco relacionados, verificamos localmente.
-
-            text = normalize_text(
+            combined = normalize_text(
                 f"{title} {description}"
             )
 
-            if wanted not in text:
+            if term_n and term_n not in combined:
+                continue
 
-                # procurar também nos restantes campos
-                complete = normalize_text(
-                    flatten(item)
-                )
-
-                if wanted not in complete:
-                    continue
-
-            buyer = (
-                item.get("entidad")
+            buyer = clean_text(
+                row.get("entidad")
+                or row.get("nombre_entidad")
                 or ""
             )
 
             country = "Colômbia"
 
-            published = (
-                item.get(
-                    "fecha_de_publicacion_del"
-                )
-                or item.get(
-                    "fecha_de_publicacion_del_proceso"
-                )
-                or item.get(
-                    "fecha_de_ultima_publicaci"
-                )
+            cpvs = normalize_cpvs(
+                row.get("codigo_principal_de_producto")
+                or row.get("codigo_unspsc")
+                or ""
+            )
+
+            date_value = (
+                row.get("fecha_de_publicacion")
+                or row.get("fecha_publicacion")
                 or ""
             )
 
             deadline = (
-                item.get(
-                    "fecha_de_recepcion_de_respuestas"
-                )
-                or item.get(
-                    "fecha_de_apertura_de_respuesta"
-                )
+                row.get("fecha_de_recepcion_de_ofertas")
+                or row.get("fecha_de_cierre")
                 or ""
             )
-
-            process_id = (
-                item.get(
-                    "id_del_proceso"
-                )
-                or ""
-            )
-
-            url = ""
-
-            if process_id:
-
-                url = (
-                    "https://www.datos.gov.co/"
-                    "Gastos-Gubernamentales/"
-                    "SECOP-II-Procesos-de-Contrataci-n/"
-                    "p6dx-8zbt"
-                )
 
             category, score = classify_result(
                 title,
                 description,
-                [],
-                "SECOP II — Colômbia"
+                cpvs
             )
 
             if category == "Outro":
                 continue
 
-            results.append(
-                make_result(
-                    title=title,
-                    buyer=buyer,
-                    country=country,
-                    published=published,
-                    deadline=deadline,
-                    cpvs=[],
-                    description=description,
-                    category=category,
-                    score=score,
-                    source="SECOP II — Colômbia",
-                    url=url
-                )
+            item = {
+                "title": title,
+                "buyer": buyer,
+                "country": country,
+                "date": date_string(date_value),
+                "deadline": date_string(deadline),
+                "cpv": cpvs,
+                "category": category,
+                "score": score,
+                "source": "SECOP II — Colômbia",
+                "url": clean_text(
+                    row.get("url")
+                    or row.get("link")
+                    or ""
+                ),
+                "description": description,
+            }
+
+            if recent_enough(item):
+                results.append(item)
+
+        diagnostics.append({
+            "source": "SECOP II — Colômbia",
+            "term": term,
+            "ok": True,
+            "count": len(results),
+            "raw_count": len(data),
+            "error": "",
+        })
+
+        return results
+
+    except Exception as exc:
+        diagnostics.append({
+            "source": "SECOP II — Colômbia",
+            "term": term,
+            "ok": False,
+            "count": 0,
+            "raw_count": 0,
+            "error": str(exc),
+        })
+
+        return []
+
+
+# ============================================================
+# PESQUISA AUTOMÁTICA GLOBAL
+# ============================================================
+
+AUTOMATIC_TERMS = [
+    "archaeology",
+    "archaeological",
+    "archaeological excavation",
+    "archaeological monitoring",
+    "cultural heritage",
+    "heritage assessment",
+    "historic environment",
+    "chance finds",
+    "archéologie",
+    "archéologique",
+    "fouilles archéologiques",
+    "patrimoine culturel",
+    "arqueologia",
+    "arqueológico",
+    "arqueológica",
+    "escavação arqueológica",
+    "acompanhamento arqueológico",
+    "archäologie",
+    "archäologisch",
+]
+
+
+def is_global_archaeology_query(query):
+    q = normalize_text(query)
+
+    if not q:
+        return True
+
+    direct_queries = {
+        "archaeology",
+        "archaeological",
+        "archaeologist",
+        "archaeological excavation",
+        "archaeological monitoring",
+        "archaeological survey",
+        "archaeological investigation",
+        "archaeological services",
+        "archéologie",
+        "archéologique",
+        "fouilles archéologiques",
+        "arqueologia",
+        "arqueologico",
+        "arqueologica",
+        "arqueológico",
+        "arqueológica",
+        "escavacao arqueologica",
+        "acompanhamento arqueologico",
+        "patrimonio cultural",
+        "patrimonio",
+        "cultural heritage",
+        "heritage",
+        "archaeologie",
+        "archaologisch",
+        "archaeologisch",
+    }
+
+    return q in direct_queries
+
+
+def automatic_search(query, diagnostics):
+    """
+    Pesquisa global.
+
+    Se o utilizador pesquisar directamente por arqueologia,
+    são pesquisadas várias formulações linguísticas.
+
+    Se fizer uma pesquisa específica, é utilizada essa pesquisa.
+    """
+
+    if is_global_archaeology_query(query):
+        terms = AUTOMATIC_TERMS
+    else:
+        terms = [query]
+
+    jobs = []
+
+    # TED
+    for term in terms:
+        jobs.append(
+            ("TED", term)
+        )
+
+    # World Bank
+    for term in terms:
+        jobs.append(
+            ("WORLD_BANK", term)
+        )
+
+    # South Africa
+    for term in terms:
+        jobs.append(
+            ("SOUTH_AFRICA", term)
+        )
+
+    # Colombia
+    for term in terms:
+        jobs.append(
+            ("SECOP", term)
+        )
+
+    results = []
+
+    def run_job(job):
+        source, term = job
+
+        if source == "TED":
+            return query_ted(
+                term,
+                diagnostics
             )
+
+        if source == "WORLD_BANK":
+            return query_world_bank(
+                term,
+                diagnostics
+            )
+
+        if source == "SOUTH_AFRICA":
+            return query_south_africa(
+                term,
+                diagnostics
+            )
+
+        if source == "SECOP":
+            return query_secop(
+                term,
+                diagnostics
+            )
+
+        return []
+
+    # --------------------------------------------------------
+    # Execução paralela
+    # --------------------------------------------------------
+
+    with ThreadPoolExecutor(
+        max_workers=8
+    ) as executor:
+
+        futures = [
+            executor.submit(
+                run_job,
+                job
+            )
+            for job in jobs
+        ]
+
+        for future in as_completed(futures):
+            try:
+                value = future.result()
+
+                if value:
+                    results.extend(value)
+
+            except Exception:
+                pass
+
+    return results
+
+
+# ============================================================
+# FILTROS
+# ============================================================
+
+def apply_filters(
+    results,
+    region="",
+    category=""
+):
+    filtered = []
+
+    region_n = normalize_text(region)
+    category_n = normalize_text(category)
+
+    for item in results:
+        item_region = normalize_text(
+            region_from_country(
+                item.get("country", "")
+            )
+        )
+
+        item_category = normalize_text(
+            item.get("category", "")
+        )
+
+        if region_n:
+            if item_region != region_n:
+                continue
+
+        if category_n:
+            if category_n not in item_category:
+                continue
+
+        filtered.append(item)
+
+    return filtered
+
+
+# ============================================================
+# ESTATÍSTICAS
+# ============================================================
+
+def build_regions(results):
+    regions = {}
+
+    for item in results:
+        region = region_from_country(
+            item.get("country", "")
+        )
+
+        regions[region] = (
+            regions.get(region, 0) + 1
+        )
+
+    return dict(
+        sorted(
+            regions.items(),
+            key=lambda x: (-x[1], x[0])
+        )
+    )
+
+
+# ============================================================
+# HEALTH
+# ============================================================
+
+@app.get("/health")
+def health():
+    automatic_sources = [
+        source["name"]
+        for source in SOURCES
+        if source.get("automatic")
+    ]
+
+    return {
+        "ok": True,
+        "app": "Arqueologia Radar",
+        "version": "2.1",
+        "period_days": PERIOD_DAYS,
+        "sources": len(SOURCES),
+        "automatic_sources": len(
+            automatic_sources
+        ),
+        "automatic_source_names": automatic_sources,
+        "date": date.today().isoformat(),
+    }
+
+
+# ============================================================
+# TESTE TED - PAÍS
+# ============================================================
+
+@app.get("/api/test-ted-country")
+def test_ted_country(
+    country: str = Query(
+        "MAR",
+        description="Código de país TED"
+    ),
+    term: str = Query(
+        "archaeology"
+    ),
+):
+    query = (
+        f'FT~"{term}" '
+        f'AND buyer-country={country.upper()}'
+    )
+
+    payload = {
+        "query": query,
+        "pageSize": 10,
+        "scope": "ACTIVE",
+        "fields": TED_FIELDS,
+    }
+
+    try:
+        response = requests.post(
+            TED_URL,
+            json=payload,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
 
         return {
             "ok": True,
-            "source": "SECOP II — Colômbia",
-            "term": term,
-            "count": len(results),
-            "raw_count": len(data),
-            "results": results
+            "status_code": response.status_code,
+            "query": query,
+            "response": response.json(),
         }
 
     except Exception as exc:
-
         return {
             "ok": False,
-            "source": "SECOP II — Colômbia",
-            "term": term,
-            "count": 0,
-            "results": [],
-            "error": str(exc)
+            "query": query,
+            "error": str(exc),
         }
 
 
 # ============================================================
-# DEDUPLICAÇÃO
+# TESTE TED MÍNIMO
 # ============================================================
 
-def deduplicate_results(results):
-
-    unique = {}
-
-    for result in results:
-
-        title = normalize_text(
-            result.get("title", "")
-        )
-
-        buyer = normalize_text(
-            result.get("buyer", "")
-        )
-
-        country = normalize_text(
-            result.get("country", "")
-        )
-
-        key = (
-            title[:250],
-            buyer[:150],
-            country
-        )
-
-        if key not in unique:
-
-            unique[key] = result
-
-        else:
-
-            existing = unique[key]
-
-            # Manter a versão com maior score
-            if (
-                result.get("score", 0)
-                >
-                existing.get("score", 0)
-            ):
-                unique[key] = result
-
-    return list(unique.values())
-
-
-# ============================================================
-# REGIÕES
-# ============================================================
-
-REGION_COUNTRIES = {
-
-    "Europa": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "PT", "ES", "FR", "DE", "IT", "NL",
-            "BE", "IE", "AT", "PL", "CZ", "SK",
-            "HU", "RO", "BG", "GR", "SE", "FI",
-            "DK", "NO", "CH", "UK"
-        }
-    },
-
-    "África": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "MA", "DZ", "TN", "EG", "ZA",
-            "MZ", "AO", "KE", "UG", "TZ"
-        }
-    },
-
-    "Américas": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "US", "CA", "MX", "BR",
-            "CL", "CO", "AR"
-        }
-    },
-
-    "Médio Oriente": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "SA", "AE", "QA", "OM"
-        }
-    },
-
-    "Ásia": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "IN", "CN", "JP", "KR"
-        }
-    },
-
-    "Oceânia": {
-        normalize_text(v)
-        for k, v in COUNTRY_NAMES.items()
-        if k in {
-            "AU", "NZ"
-        }
+@app.get("/api/test-ted-minimal")
+def test_ted_minimal(
+    term: str = Query("archaeology")
+):
+    payload = {
+        "query": f'FT~"{term}"',
+        "pageSize": 10,
+        "scope": "ACTIVE",
+        "fields": [
+            "publication-number",
+            "publication-date",
+            "notice-title",
+            "buyer-name",
+            "buyer-country",
+        ],
     }
-}
-
-
-def region_matches(country, region):
-
-    if not region:
-        return True
-
-    if not country:
-        return True
-
-    normalized = normalize_text(country)
-
-    allowed = REGION_COUNTRIES.get(
-        region,
-        set()
-    )
-
-    return normalized in allowed
-
-
-# ============================================================
-# PRAZO
-# ============================================================
-
-def is_expired(deadline):
-
-    if not deadline:
-        return False
 
     try:
+        response = requests.post(
+            TED_URL,
+            json=payload,
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
 
-        value = datetime.strptime(
-            deadline,
-            "%Y-%m-%d"
-        ).date()
+        return {
+            "ok": True,
+            "status_code": response.status_code,
+            "query": payload["query"],
+            "response": response.json(),
+        }
 
-        return value < today_utc()
-
-    except Exception:
-        return False
+    except Exception as exc:
+        return {
+            "ok": False,
+            "query": payload["query"],
+            "error": str(exc),
+        }
 
 
 # ============================================================
@@ -2047,606 +2195,174 @@ def search(
     category: str = Query(
         "",
         description="Categoria"
-    )
+    ),
 ):
+    started = datetime.now()
 
-    started = time.time()
-
-    query = clean_query(q)
-
-    # --------------------------------------------------------
-    # MODO AUTOMÁTICO
-    # --------------------------------------------------------
-
-    automatic_mode = (
-        not query
-        or normalize_text(query)
-        in {
-            "archaeology",
-            "arqueologia"
-        }
-    )
-
-    if automatic_mode:
-
-        search_terms = [
-            "archaeological excavation",
-            "archaeological monitoring",
-            "archaeological services",
-            "archaeology",
-            "archaeological",
-            "excavation",
-            "cultural heritage",
-            "heritage",
-            "archaeological survey",
-            "archaeological assessment",
-            "archéologie",
-            "arqueologia"
-        ]
-
-    else:
-
-        search_terms = [query]
-
-    # Evitar duplicações
-    search_terms = list(
-        dict.fromkeys(search_terms)
-    )
-
-    # --------------------------------------------------------
-    # EXECUÇÃO PARALELA
-    # --------------------------------------------------------
-
-    jobs = []
-
-    for term in search_terms:
-
-        jobs.append(
-            (
-                "TED",
-                term,
-                query_ted
-            )
-        )
-
-        jobs.append(
-            (
-                "World Bank",
-                term,
-                query_world_bank
-            )
-        )
-
-        # Fontes regionais automáticas.
-        # Para reduzir tráfego, estas duas fontes
-        # são pesquisadas apenas no modo automático
-        # ou quando a pesquisa corresponde a arqueologia.
-
-        if automatic_mode:
-
-            jobs.append(
-                (
-                    "South Africa",
-                    term,
-                    query_south_africa
-                )
-            )
-
-            jobs.append(
-                (
-                    "Colombia",
-                    term,
-                    query_colombia_secop
-                )
-            )
-
-    all_results = []
+    query = clean_text(q)
 
     diagnostics = []
 
-    with ThreadPoolExecutor(
-        max_workers=12
-    ) as executor:
-
-        future_map = {}
-
-        for source_name, term, function in jobs:
-
-            future = executor.submit(
-                function,
-                term
-            )
-
-            future_map[future] = (
-                source_name,
-                term
-            )
-
-        for future in as_completed(
-            future_map
-        ):
-
-            source_name, term = (
-                future_map[future]
-            )
-
-            try:
-
-                result = future.result()
-
-                if not isinstance(result, dict):
-                    continue
-
-                diagnostics.append({
-
-                    "source": result.get(
-                        "source",
-                        source_name
-                    ),
-
-                    "term": term,
-
-                    "ok": result.get(
-                        "ok",
-                        False
-                    ),
-
-                    "count": result.get(
-                        "count",
-                        0
-                    ),
-
-                    "raw_count": result.get(
-                        "raw_count",
-                        0
-                    ),
-
-                    "error": result.get(
-                        "error",
-                        ""
-                    )
-                })
-
-                all_results.extend(
-                    result.get(
-                        "results",
-                        []
-                    )
-                )
-
-            except Exception as exc:
-
-                diagnostics.append({
-
-                    "source": source_name,
-                    "term": term,
-                    "ok": False,
-                    "count": 0,
-                    "error": str(exc)
-
-                })
-
-    # --------------------------------------------------------
-    # DEDUPLICAÇÃO
-    # --------------------------------------------------------
-
-    results = deduplicate_results(
-        all_results
+    automatic_mode = is_global_archaeology_query(
+        query
     )
 
     # --------------------------------------------------------
-    # REGIÃO
+    # Pesquisa automática
     # --------------------------------------------------------
 
-    if region:
-
-        results = [
-            result
-            for result in results
-            if region_matches(
-                result.get("country", ""),
-                region
-            )
-        ]
-
-    # --------------------------------------------------------
-    # CATEGORIA
-    # --------------------------------------------------------
-
-    if category:
-
-        results = [
-            result
-            for result in results
-            if normalize_text(
-                result.get("category", "")
-            )
-            ==
-            normalize_text(category)
-        ]
-
-    # --------------------------------------------------------
-    # RETIRAR PRAZOS EXPIRADOS
-    # --------------------------------------------------------
-
-    results = [
-        result
-        for result in results
-        if not is_expired(
-            result.get("deadline", "")
+    if automatic_mode:
+        results = automatic_search(
+            query,
+            diagnostics
         )
-    ]
+
+    else:
+        # Pesquisa específica:
+        # mesmo motor global, mas com o termo indicado.
+        results = automatic_search(
+            query,
+            diagnostics
+        )
 
     # --------------------------------------------------------
-    # REPARAR TEXTO
+    # Normalização
     # --------------------------------------------------------
 
-    for result in results:
+    normalized_results = []
 
-        for key in [
-            "title",
-            "buyer",
-            "country",
-            "category",
-            "description"
-        ]:
+    for item in results:
+        normalized = normalize_result(item)
 
-            result[key] = repair_mojibake(
-                result.get(key, "")
-            )
+        if not normalized:
+            continue
+
+        # Nunca mostrar "Outro"
+        if normalized.get("category") == "Outro":
+            continue
+
+        # Regra dos últimos 365 dias
+        if not recent_enough(normalized):
+            continue
+
+        normalized_results.append(
+            normalized
+        )
 
     # --------------------------------------------------------
-    # ORDENAÇÃO
+    # Duplicados
     # --------------------------------------------------------
 
-    results.sort(
-        key=lambda x: (
-            x.get("score", 0),
-            x.get("date", "")
-        ),
-        reverse=True
+    normalized_results = dedupe_results(
+        normalized_results
     )
 
     # --------------------------------------------------------
-    # ESTATÍSTICAS POR REGIÃO
+    # Filtros
     # --------------------------------------------------------
 
-    regions = {}
-
-    for result in results:
-
-        country = result.get(
-            "country",
-            ""
-        )
-
-        found_region = "Global"
-
-        for region_name, countries in (
-            REGION_COUNTRIES.items()
-        ):
-
-            if normalize_text(country) in countries:
-
-                found_region = region_name
-                break
-
-        regions[found_region] = (
-            regions.get(found_region, 0)
-            + 1
-        )
+    normalized_results = apply_filters(
+        normalized_results,
+        region=region,
+        category=category,
+    )
 
     # --------------------------------------------------------
-    # FONTES AUTOMÁTICAS
+    # Regiões
     # --------------------------------------------------------
 
-    automatic_sources = [
-        source
-        for source in SOURCES
-        if source.get("automatic")
-    ]
+    regions = build_regions(
+        normalized_results
+    )
+
+    elapsed = (
+        datetime.now() - started
+    ).total_seconds()
 
     automatic_source_names = [
         source["name"]
-        for source in automatic_sources
-    ]
-
-    elapsed = round(
-        time.time() - started,
-        2
-    )
-
-    return {
-        "ok": True,
-
-        "query": (
-            query
-            if query
-            else "archaeology"
-        ),
-
-        "automatic_mode": automatic_mode,
-
-        "region": region,
-
-        "category": category,
-
-        "results": results,
-
-        "count": len(results),
-
-        "sources": len(SOURCES),
-
-        "automatic_sources": len(
-            automatic_sources
-        ),
-
-        "automatic_source_names":
-            automatic_source_names,
-
-        "portal_count": len([
-            s for s in SOURCES
-            if not s.get("automatic")
-        ]),
-
-        "regions": regions,
-
-        "diagnostics": diagnostics,
-
-        "searched_at": date.today().isoformat(),
-
-        "elapsed_seconds": elapsed
-    }
-
-
-# ============================================================
-# TESTE TED POR PAÍS
-# ============================================================
-
-@app.get("/api/test-ted-country")
-def test_ted_country(
-    country: str = "MAR"
-):
-
-    country = country.strip().upper()
-
-    test_query = (
-        f'FT~"works" '
-        f'AND buyer-country={country}'
-    )
-
-    payload = {
-
-        "query": test_query,
-
-        "fields": TED_FIELDS,
-
-        "page": 1,
-
-        "limit": 10,
-
-        "scope": "ACTIVE",
-
-        "checkQuerySyntax": False,
-
-        "paginationMode":
-            "PAGE_NUMBER"
-    }
-
-    try:
-
-        response = requests.post(
-            TED_URL,
-            json=payload,
-            timeout=REQUEST_TIMEOUT
-        )
-
-        return {
-            "ok": (
-                response.status_code
-                == 200
-            ),
-
-            "status_code":
-                response.status_code,
-
-            "query":
-                test_query,
-
-            "response":
-                response.json()
-        }
-
-    except Exception as exc:
-
-        return {
-            "ok": False,
-            "query": test_query,
-            "error": str(exc)
-        }
-
-
-# ============================================================
-# TESTE TED MINIMAL
-# ============================================================
-
-@app.get("/api/test-ted-minimal")
-def test_ted_minimal():
-
-    test_query = "FT~archaeological"
-
-    payload = {
-
-        "query": test_query,
-
-        "fields": [
-            "publication-number",
-            "publication-date",
-            "notice-title"
-        ],
-
-        "page": 1,
-
-        "limit": 10,
-
-        "scope": "ACTIVE",
-
-        "checkQuerySyntax": False,
-
-        "paginationMode":
-            "PAGE_NUMBER"
-    }
-
-    try:
-
-        response = requests.post(
-            TED_URL,
-            json=payload,
-            timeout=REQUEST_TIMEOUT
-        )
-
-        return {
-            "ok": (
-                response.status_code
-                == 200
-            ),
-
-            "status_code":
-                response.status_code,
-
-            "query":
-                test_query,
-
-            "response":
-                response.json()
-        }
-
-    except Exception as exc:
-
-        return {
-            "ok": False,
-            "query": test_query,
-            "error": str(exc)
-        }
-
-
-# ============================================================
-# HEALTH
-# ============================================================
-
-@app.get("/health")
-def health():
-
-    automatic_sources = [
-        source
         for source in SOURCES
         if source.get("automatic")
     ]
 
+    portal_count = len([
+        source
+        for source in SOURCES
+        if not source.get("automatic")
+    ])
+
     return {
-
         "ok": True,
-
-        "service":
-            "Arqueologia Radar",
-
-        "version":
-            "2.0",
-
-        "sources":
-            len(SOURCES),
-
-        "automatic_sources":
-            len(automatic_sources),
-
-        "date":
-            date.today().isoformat()
-
+        "query": query,
+        "automatic_mode": automatic_mode,
+        "region": region,
+        "category": category,
+        "results": normalized_results,
+        "count": len(normalized_results),
+        "sources": len(SOURCES),
+        "automatic_sources": len(
+            automatic_source_names
+        ),
+        "automatic_source_names": automatic_source_names,
+        "portal_count": portal_count,
+        "regions": regions,
+        "diagnostics": diagnostics,
+        "searched_at": date.today().isoformat(),
+        "period_days": PERIOD_DAYS,
+        "cutoff_date": cutoff_date().isoformat(),
+        "elapsed_seconds": round(
+            elapsed,
+            2
+        ),
     }
 
 
 # ============================================================
-# PÁGINA PRINCIPAL
+# FRONTEND
 # ============================================================
 
 @app.get("/")
-def root():
+def index():
+    file_path = BASE_DIR / "index.html"
 
-    file = BASE_DIR / "index.html"
-
-    if file.exists():
-
+    if file_path.exists():
         return FileResponse(
-            file
+            file_path,
+            media_type="text/html"
         )
 
     return JSONResponse({
-
         "ok": True,
-
-        "service":
-            "Arqueologia Radar",
-
-        "message":
-            "index.html não encontrado"
-
+        "message": "Arqueologia Radar online."
     })
 
 
-# ============================================================
-# APP.JS
-# ============================================================
-
 @app.get("/app.js")
 def app_js():
+    file_path = BASE_DIR / "app.js"
 
-    file = BASE_DIR / "app.js"
-
-    if file.exists():
-
+    if file_path.exists():
         return FileResponse(
-            file,
+            file_path,
             media_type="application/javascript"
         )
 
     return JSONResponse({
-
         "ok": False,
-
-        "error":
-            "app.js não encontrado"
-
+        "error": "app.js não encontrado."
     })
 
 
-# ============================================================
-# MANIFEST
-# ============================================================
-
 @app.get("/manifest.json")
 def manifest():
+    file_path = BASE_DIR / "manifest.json"
 
-    file = BASE_DIR / "manifest.json"
-
-    if file.exists():
-
+    if file_path.exists():
         return FileResponse(
-            file,
+            file_path,
             media_type="application/manifest+json"
         )
 
     return JSONResponse({
-
-        "name":
-            "Arqueologia Radar",
-
-        "short_name":
-            "Radar",
-
-        "start_url":
-            "/",
-
-        "display":
-            "standalone"
-
+        "name": "Arqueologia Radar"
     })
