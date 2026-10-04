@@ -739,25 +739,18 @@ def normalize_text(value):
 # ============================================================
 
 def build_ted_query(term):
-
-    term = clean_query(
-        term
-    )
+    term = clean_query(term)
 
     if not term:
-        term = "archaeology"
+        return ""
 
-    # Pesquisa de texto livre no TED.
-    #
-    # As aspas são mantidas para termos compostos.
-    # Termos simples ficam igualmente protegidos.
-    escaped = term.replace(
-        '"',
-        '\\"'
-    )
+    # Uma palavra: sem aspas
+    if " " not in term:
+        return f"FT~{term}"
 
+    # Várias palavras: pesquisa como expressão
+    escaped = term.replace('"', '\\"')
     return f'FT~"{escaped}"'
-
 
 # ============================================================
 # LIMPEZA DOS TÍTULOS TED
