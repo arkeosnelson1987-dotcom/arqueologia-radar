@@ -10,14 +10,14 @@ import unicodedata
 
 # ============================================================
 # ARQUEOLOGIA RADAR
-# Versão 2.3 - pesquisa global consolidada
+# Versão 2.4 - pesquisa global consolidada
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="2.3"
+    version="2.4"
 )
 
 REQUEST_TIMEOUT = 30
@@ -39,12 +39,29 @@ SECOP_URL = (
 )
 
 # ============================================================
+# NOMES SEGUROS DAS FONTES
+# ============================================================
+
+TED_SOURCE = (
+    "TED " + chr(0x2014) + " Europa"
+)
+
+SECOP_SOURCE = (
+    "SECOP II " + chr(0x2014) + " Col"
+    + chr(0x00f4) + "mbia"
+)
+
+SOUTH_AFRICA_SOURCE = (
+    "South Africa eTenders " + chr(0x2014) + " OCDS"
+)
+
+# ============================================================
 # FONTES
 # ============================================================
 
 SOURCES = [
     {
-        "name": "TED \u2014 Europa",
+        "name": TED_SOURCE,
         "region": "Europa",
         "country": "UE",
         "url": "https://ted.europa.eu/",
@@ -60,7 +77,7 @@ SOURCES = [
         "automatic": True,
     },
     {
-        "name": "South Africa eTenders \u2014 OCDS",
+        "name": SOUTH_AFRICA_SOURCE,
         "region": "\u00c1frica",
         "country": "\u00c1frica do Sul",
         "url": "https://www.etenders.gov.za/",
@@ -68,7 +85,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "SECOP II \u2014 Col\u00f4mbia",
+        "name": SECOP_SOURCE,
         "region": "Am\u00e9rica",
         "country": "Col\u00f4mbia",
         "url": "https://www.colombiacompra.gov.co/",
@@ -77,11 +94,11 @@ SOURCES = [
     },
 
     # --------------------------------------------------------
-    # PORTAIS / FONTES DE REFER\u00caNCIA
+    # PORTAIS / FONTES DE REFERÊNCIA
     # --------------------------------------------------------
 
     {
-        "name": "AfDB \u2014 African Development Bank",
+        "name": "AfDB " + chr(0x2014) + " African Development Bank",
         "region": "\u00c1frica",
         "country": "",
         "url": "https://www.afdb.org/en/projects-and-operations/procurement",
@@ -89,7 +106,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "SAM.gov \u2014 Estados Unidos",
+        "name": "SAM.gov " + chr(0x2014) + " Estados Unidos",
         "region": "Am\u00e9rica",
         "country": "EUA",
         "url": "https://sam.gov/content/opportunities",
@@ -97,7 +114,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "BASE \u2014 Portugal",
+        "name": "BASE " + chr(0x2014) + " Portugal",
         "region": "Europa",
         "country": "Portugal",
         "url": "https://www.base.gov.pt/",
@@ -105,7 +122,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Contrataci\u00f3n del Estado \u2014 Espanha",
+        "name": "Contrataci\u00f3n del Estado " + chr(0x2014) + " Espanha",
         "region": "Europa",
         "country": "Espanha",
         "url": "https://contrataciondelestado.es/",
@@ -113,7 +130,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "UNDB \u2014 United Nations Development Business",
+        "name": "UNDB " + chr(0x2014) + " United Nations Development Business",
         "region": "Global",
         "country": "",
         "url": "https://devbusiness.un.org/",
@@ -121,7 +138,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "UNGM \u2014 United Nations Global Marketplace",
+        "name": "UNGM " + chr(0x2014) + " United Nations Global Marketplace",
         "region": "Global",
         "country": "",
         "url": "https://www.ungm.org/",
@@ -129,7 +146,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "EBRD \u2014 European Bank for Reconstruction and Development",
+        "name": "EBRD " + chr(0x2014) + " European Bank for Reconstruction and Development",
         "region": "Europa / \u00c1sia",
         "country": "",
         "url": "https://www.ebrd.com/work-with-us/procurement.html",
@@ -137,7 +154,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "EIB \u2014 European Investment Bank",
+        "name": "EIB " + chr(0x2014) + " European Investment Bank",
         "region": "Europa",
         "country": "",
         "url": "https://www.eib.org/en/projects/procurement/index.htm",
@@ -145,7 +162,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Oman \u2014 Tender Board",
+        "name": "Oman " + chr(0x2014) + " Tender Board",
         "region": "\u00c1sia",
         "country": "Om\u00e3",
         "url": "https://etendering.tenderboard.gov.om/",
@@ -153,7 +170,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Etimad \u2014 Ar\u00e1bia Saudita",
+        "name": "Etimad " + chr(0x2014) + " Ar\u00e1bia Saudita",
         "region": "\u00c1sia",
         "country": "Ar\u00e1bia Saudita",
         "url": "https://tenders.etimad.sa/",
@@ -161,7 +178,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "UAE \u2014 Federal Procurement",
+        "name": "UAE " + chr(0x2014) + " Federal Procurement",
         "region": "\u00c1sia",
         "country": "Emirados \u00c1rabes Unidos",
         "url": "https://mof.gov.ae/",
@@ -169,7 +186,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Qatar \u2014 Government Procurement",
+        "name": "Qatar " + chr(0x2014) + " Government Procurement",
         "region": "\u00c1sia",
         "country": "Qatar",
         "url": "https://monaqasat.mof.gov.qa/",
@@ -177,7 +194,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Maroc \u2014 March\u00e9s Publics",
+        "name": "Maroc " + chr(0x2014) + " March\u00e9s Publics",
         "region": "\u00c1frica",
         "country": "Marrocos",
         "url": "https://www.marchespublics.gov.ma/",
@@ -185,7 +202,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Uganda \u2014 eGP",
+        "name": "Uganda " + chr(0x2014) + " eGP",
         "region": "\u00c1frica",
         "country": "Uganda",
         "url": "https://egpuganda.go.ug/",
@@ -193,7 +210,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Kenya \u2014 Public Procurement",
+        "name": "Kenya " + chr(0x2014) + " Public Procurement",
         "region": "\u00c1frica",
         "country": "Qu\u00e9nia",
         "url": "https://www.treasury.go.ke/",
@@ -201,7 +218,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Tanzania \u2014 PPRA",
+        "name": "Tanzania " + chr(0x2014) + " PPRA",
         "region": "\u00c1frica",
         "country": "Tanz\u00e2nia",
         "url": "https://www.ppra.go.tz/",
@@ -209,7 +226,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Mo\u00e7ambique \u2014 Contrata\u00e7\u00e3o P\u00fablica",
+        "name": "Mo\u00e7ambique " + chr(0x2014) + " Contrata\u00e7\u00e3o P\u00fablica",
         "region": "\u00c1frica",
         "country": "Mo\u00e7ambique",
         "url": "https://www.ufsa.gov.mz/",
@@ -225,7 +242,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "Brasil \u2014 Compras.gov.br",
+        "name": "Brasil " + chr(0x2014) + " Compras.gov.br",
         "region": "Am\u00e9rica",
         "country": "Brasil",
         "url": "https://www.gov.br/compras/",
@@ -233,7 +250,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "IDB \u2014 Inter-American Development Bank",
+        "name": "IDB " + chr(0x2014) + " Inter-American Development Bank",
         "region": "Am\u00e9rica",
         "country": "",
         "url": "https://www.iadb.org/en/how-we-work/working-us/procurement",
@@ -241,7 +258,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "ADB \u2014 Asian Development Bank",
+        "name": "ADB " + chr(0x2014) + " Asian Development Bank",
         "region": "\u00c1sia",
         "country": "",
         "url": "https://www.adb.org/work-with-us/procurement",
@@ -249,7 +266,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "AusTender \u2014 Austr\u00e1lia",
+        "name": "AusTender " + chr(0x2014) + " Austr\u00e1lia",
         "region": "\u00c1sia / Oce\u00e2nia",
         "country": "Austr\u00e1lia",
         "url": "https://www.tenders.gov.au/",
@@ -257,7 +274,7 @@ SOURCES = [
         "automatic": False,
     },
     {
-        "name": "NZ GETS \u2014 Nova Zel\u00e2ndia",
+        "name": "NZ GETS " + chr(0x2014) + " Nova Zel\u00e2ndia",
         "region": "\u00c1sia / Oce\u00e2nia",
         "country": "Nova Zel\u00e2ndia",
         "url": "https://www.gets.govt.nz/",
@@ -317,39 +334,38 @@ DIRECT_TERMS = [
     "archaeological work",
     "archaeological works",
 
-    "archéologie",
-    "archéologique",
-    "archéologue",
-    "fouilles archéologiques",
+    "arch\u00e9ologie",
+    "arch\u00e9ologique",
+    "arch\u00e9ologue",
+    "fouilles arch\u00e9ologiques",
 
     "arqueologia",
-    "arqueológico",
-    "arqueológica",
-    "arqueólogo",
-    "arqueóloga",
-    "escavação arqueológica",
-    "acompanhamento arqueológico",
-    "monitorização arqueológica",
-    "prospeção arqueológica",
-    "prospecção arqueológica",
-    "avaliação arqueológica",
-    "trabalhos arqueológicos",
-    "serviços arqueológicos",
-    "consultoria arqueológica",
-    "consultor arqueológico",
-    "arqueólogo coordenador",
+    "arqueol\u00f3gico",
+    "arqueol\u00f3gica",
+    "arque\u00f3logo",
+    "arque\u00f3loga",
+    "escava\u00e7\u00e3o arqueol\u00f3gica",
+    "acompanhamento arqueol\u00f3gico",
+    "monitoriza\u00e7\u00e3o arqueol\u00f3gica",
+    "prospe\u00e7\u00e3o arqueol\u00f3gica",
+    "prospec\u00e7\u00e3o arqueol\u00f3gica",
+    "avalia\u00e7\u00e3o arqueol\u00f3gica",
+    "trabalhos arqueol\u00f3gicos",
+    "servi\u00e7os arqueol\u00f3gicos",
+    "consultoria arqueol\u00f3gica",
+    "consultor arqueol\u00f3gico",
+    "arque\u00f3logo coordenador",
 
-    "archäologie",
-    "archäologisch",
-    "archäologe",
+    "arch\u00e4ologie",
+    "arch\u00e4ologisch",
+    "arch\u00e4ologe",
 
     "archeologie",
     "archeologisch",
 ]
 
 # ============================================================
-# FUNÇÕES / SERVIÇOS QUE NÃO DEVEM SER
-# CLASSIFICADOS COMO ARQUEOLOGIA DIRETA
+# FUNÇÕES / SERVIÇOS DE APOIO
 # ============================================================
 
 ARCHAEOLOGY_SUPPORT_EXCLUSIONS = [
@@ -408,14 +424,14 @@ HERITAGE_TERMS = [
     "heritage management",
     "chance finds",
 
-    "património cultural",
+    "patrim\u00f3nio cultural",
     "patrimonio cultural",
-    "avaliação patrimonial",
+    "avalia\u00e7\u00e3o patrimonial",
     "impacte patrimonial",
     "impacto patrimonial",
 
     "patrimoine culturel",
-    "patrimoine archéologique",
+    "patrimoine arch\u00e9ologique",
     "patrimoine historique",
 
     "heritage conservation",
@@ -457,10 +473,10 @@ MAJOR_PROJECT_TERMS = [
     "ferroviaire",
     "route",
     "autoroute",
-    "aéroport",
+    "a\u00e9roport",
     "port",
     "barrage",
-    "énergie",
+    "\u00e9nergie",
     "infrastructure",
 
     "ferrovia",
@@ -478,162 +494,162 @@ MAJOR_PROJECT_TERMS = [
 COUNTRY_MAP = {
     "PT": "Portugal",
     "ES": "Espanha",
-    "FR": "França",
+    "FR": "Fran\u00e7a",
     "DE": "Alemanha",
-    "IT": "Itália",
-    "BE": "Bélgica",
-    "NL": "Países Baixos",
+    "IT": "It\u00e1lia",
+    "BE": "B\u00e9lgica",
+    "NL": "Pa\u00edses Baixos",
     "LU": "Luxemburgo",
     "IE": "Irlanda",
-    "AT": "Áustria",
-    "PL": "Polónia",
-    "CZ": "Chéquia",
-    "SK": "Eslováquia",
+    "AT": "\u00c1ustria",
+    "PL": "Pol\u00f3nia",
+    "CZ": "Ch\u00e9quia",
+    "SK": "Eslov\u00e1quia",
     "HU": "Hungria",
-    "RO": "Roménia",
-    "BG": "Bulgária",
-    "HR": "Croácia",
-    "SI": "Eslovénia",
-    "SE": "Suécia",
-    "FI": "Finlândia",
+    "RO": "Rom\u00e9nia",
+    "BG": "Bulg\u00e1ria",
+    "HR": "Cro\u00e1cia",
+    "SI": "Eslov\u00e9nia",
+    "SE": "Su\u00e9cia",
+    "FI": "Finl\u00e2ndia",
     "DK": "Dinamarca",
-    "EE": "Estónia",
-    "LV": "Letónia",
-    "LT": "Lituânia",
-    "GR": "Grécia",
+    "EE": "Est\u00f3nia",
+    "LV": "Let\u00f3nia",
+    "LT": "Litu\u00e2nia",
+    "GR": "Gr\u00e9cia",
     "CY": "Chipre",
     "MT": "Malta",
     "NO": "Noruega",
-    "IS": "Islândia",
-    "CH": "Suíça",
+    "IS": "Isl\u00e2ndia",
+    "CH": "Su\u00ed\u00e7a",
     "UK": "Reino Unido",
     "GB": "Reino Unido",
 
     "MA": "Marrocos",
-    "DZ": "Argélia",
-    "TN": "Tunísia",
+    "DZ": "Arg\u00e9lia",
+    "TN": "Tun\u00edsia",
     "EG": "Egito",
-    "ZA": "África do Sul",
-    "KE": "Quénia",
+    "ZA": "\u00c1frica do Sul",
+    "KE": "Qu\u00e9nia",
     "UG": "Uganda",
-    "TZ": "Tanzânia",
-    "MZ": "Moçambique",
-    "NG": "Nigéria",
+    "TZ": "Tanz\u00e2nia",
+    "MZ": "Mo\u00e7ambique",
+    "NG": "Nig\u00e9ria",
     "GH": "Gana",
-    "ET": "Etiópia",
+    "ET": "Eti\u00f3pia",
 
     "US": "Estados Unidos",
-    "CA": "Canadá",
-    "MX": "México",
+    "CA": "Canad\u00e1",
+    "MX": "M\u00e9xico",
     "BR": "Brasil",
     "CL": "Chile",
-    "CO": "Colômbia",
+    "CO": "Col\u00f4mbia",
     "PE": "Peru",
     "AR": "Argentina",
     "UY": "Uruguai",
     "PY": "Paraguai",
 
-    "SA": "Arábia Saudita",
-    "AE": "Emirados Árabes Unidos",
+    "SA": "Ar\u00e1bia Saudita",
+    "AE": "Emirados \u00c1rabes Unidos",
     "QA": "Qatar",
-    "OM": "Omã",
-    "JO": "Jordânia",
+    "OM": "Om\u00e3",
+    "JO": "Jord\u00e2nia",
     "IL": "Israel",
     "TR": "Turquia",
-    "IN": "Índia",
-    "PK": "Paquistão",
+    "IN": "\u00cdndia",
+    "PK": "Paquist\u00e3o",
     "BD": "Bangladesh",
     "LK": "Sri Lanka",
     "CN": "China",
-    "JP": "Japão",
+    "JP": "Jap\u00e3o",
     "KR": "Coreia do Sul",
-    "ID": "Indonésia",
-    "MY": "Malásia",
-    "TH": "Tailândia",
+    "ID": "Indon\u00e9sia",
+    "MY": "Mal\u00e1sia",
+    "TH": "Tail\u00e2ndia",
     "VN": "Vietname",
 
-    "AU": "Austrália",
-    "NZ": "Nova Zelândia",
+    "AU": "Austr\u00e1lia",
+    "NZ": "Nova Zel\u00e2ndia",
 }
 
 ISO3_MAP = {
     "PRT": "Portugal",
     "ESP": "Espanha",
-    "FRA": "França",
+    "FRA": "Fran\u00e7a",
     "DEU": "Alemanha",
-    "ITA": "Itália",
-    "BEL": "Bélgica",
-    "NLD": "Países Baixos",
+    "ITA": "It\u00e1lia",
+    "BEL": "B\u00e9lgica",
+    "NLD": "Pa\u00edses Baixos",
     "LUX": "Luxemburgo",
     "IRL": "Irlanda",
-    "AUT": "Áustria",
-    "POL": "Polónia",
-    "CZE": "Chéquia",
-    "SVK": "Eslováquia",
+    "AUT": "\u00c1ustria",
+    "POL": "Pol\u00f3nia",
+    "CZE": "Ch\u00e9quia",
+    "SVK": "Eslov\u00e1quia",
     "HUN": "Hungria",
-    "ROU": "Roménia",
-    "BGR": "Bulgária",
-    "HRV": "Croácia",
-    "SVN": "Eslovénia",
-    "SWE": "Suécia",
-    "FIN": "Finlândia",
+    "ROU": "Rom\u00e9nia",
+    "BGR": "Bulg\u00e1ria",
+    "HRV": "Cro\u00e1cia",
+    "SVN": "Eslov\u00e9nia",
+    "SWE": "Su\u00e9cia",
+    "FIN": "Finl\u00e2ndia",
     "DNK": "Dinamarca",
-    "EST": "Estónia",
-    "LVA": "Letónia",
-    "LTU": "Lituânia",
-    "GRC": "Grécia",
+    "EST": "Est\u00f3nia",
+    "LVA": "Let\u00f3nia",
+    "LTU": "Litu\u00e2nia",
+    "GRC": "Gr\u00e9cia",
     "CYP": "Chipre",
     "MLT": "Malta",
     "NOR": "Noruega",
-    "ISL": "Islândia",
-    "CHE": "Suíça",
+    "ISL": "Isl\u00e2ndia",
+    "CHE": "Su\u00ed\u00e7a",
     "GBR": "Reino Unido",
 
     "MAR": "Marrocos",
-    "DZA": "Argélia",
-    "TUN": "Tunísia",
+    "DZA": "Arg\u00e9lia",
+    "TUN": "Tun\u00edsia",
     "EGY": "Egito",
-    "ZAF": "África do Sul",
-    "KEN": "Quénia",
+    "ZAF": "\u00c1frica do Sul",
+    "KEN": "Qu\u00e9nia",
     "UGA": "Uganda",
-    "TZA": "Tanzânia",
-    "MOZ": "Moçambique",
-    "NGA": "Nigéria",
+    "TZA": "Tanz\u00e2nia",
+    "MOZ": "Mo\u00e7ambique",
+    "NGA": "Nig\u00e9ria",
     "GHA": "Gana",
-    "ETH": "Etiópia",
+    "ETH": "Eti\u00f3pia",
 
     "USA": "Estados Unidos",
-    "CAN": "Canadá",
-    "MEX": "México",
+    "CAN": "Canad\u00e1",
+    "MEX": "M\u00e9xico",
     "BRA": "Brasil",
     "CHL": "Chile",
-    "COL": "Colômbia",
+    "COL": "Col\u00f4mbia",
     "PER": "Peru",
     "ARG": "Argentina",
     "URY": "Uruguai",
     "PRY": "Paraguai",
 
-    "SAU": "Arábia Saudita",
-    "ARE": "Emirados Árabes Unidos",
+    "SAU": "Ar\u00e1bia Saudita",
+    "ARE": "Emirados \u00c1rabes Unidos",
     "QAT": "Qatar",
-    "OMN": "Omã",
-    "JOR": "Jordânia",
+    "OMN": "Om\u00e3",
+    "JOR": "Jord\u00e2nia",
     "ISR": "Israel",
     "TUR": "Turquia",
-    "IND": "Índia",
-    "PAK": "Paquistão",
+    "IND": "\u00cdndia",
+    "PAK": "Paquist\u00e3o",
     "BGD": "Bangladesh",
     "LKA": "Sri Lanka",
     "CHN": "China",
-    "JPN": "Japão",
+    "JPN": "Jap\u00e3o",
     "KOR": "Coreia do Sul",
-    "IDN": "Indonésia",
-    "MYS": "Malásia",
-    "THA": "Tailândia",
+    "IDN": "Indon\u00e9sia",
+    "MYS": "Mal\u00e1sia",
+    "THA": "Tail\u00e2ndia",
     "VNM": "Vietname",
 
-    "AUS": "Austrália",
-    "NZL": "Nova Zelândia",
+    "AUS": "Austr\u00e1lia",
+    "NZL": "Nova Zel\u00e2ndia",
 }
 
 # ============================================================
@@ -641,30 +657,38 @@ ISO3_MAP = {
 # ============================================================
 
 def repair_mojibake(value):
+
     if not isinstance(value, str):
         return value
 
     current = value
 
-    for _ in range(5):
+    for _ in range(6):
+
+        bad_markers = (
+            "Ã",
+            "Â",
+            "â",
+            "ð",
+            "�",
+            "MÃ",
+            "ColÃ",
+        )
+
         if not any(
-            token in current
-            for token in (
-                "Ã",
-                "Â",
-                "â",
-                "ð",
-                "�",
-            )
+            marker in current
+            for marker in bad_markers
         ):
             break
 
         try:
+
             candidate = (
                 current
                 .encode("latin1")
                 .decode("utf-8")
             )
+
         except (
             UnicodeEncodeError,
             UnicodeDecodeError
@@ -685,6 +709,34 @@ def repair_mojibake(value):
         "â€": "”",
         "â€¦": "…",
         "Â ": " ",
+        "Ã´": "ô",
+        "Ã´": "ô",
+        "Ã³": "ó",
+        "Ã©": "é",
+        "Ãª": "ê",
+        "Ã§": "ç",
+        "Ã£": "ã",
+        "Ã¡": "á",
+        "Ãº": "ú",
+        "Ã­": "í",
+        "Ã¬": "ì",
+        "Ã¨": "è",
+        "Ã‰": "É",
+        "Ãˆ": "È",
+        "Ã€": "À",
+        "Ã‚": "Â",
+        "Ã”": "Ô",
+        "Ã“": "Ó",
+        "Ã‡": "Ç",
+        "Ãƒ": "Ã",
+        "Ãš": "Ú",
+        "Ã": "Á",
+        "Ã": "Í",
+        "Ã‰": "É",
+        "MÃˆS": "MÈS",
+        "MÃˆs": "MÈs",
+        "MÃ¨S": "MÈS",
+        "MÃ¨s": "Mès",
     }
 
     for old, new in replacements.items():
@@ -697,6 +749,7 @@ def repair_mojibake(value):
 
 
 def choose_multilingual_text(value):
+
     if value is None:
         return ""
 
@@ -811,6 +864,7 @@ def choose_multilingual_text(value):
 
 
 def normalize_text(value):
+
     if value is None:
         return ""
 
@@ -849,6 +903,7 @@ def normalize_text(value):
 
 
 def clean_text(value):
+
     value = choose_multilingual_text(
         value
     )
@@ -873,7 +928,9 @@ def clean_text(value):
         value
     )
 
-    return value.strip()
+    return repair_mojibake(
+        value.strip()
+    )
 
 
 # ============================================================
@@ -881,12 +938,14 @@ def clean_text(value):
 # ============================================================
 
 def cutoff_date():
+
     return date.today() - timedelta(
         days=PERIOD_DAYS
     )
 
 
 def parse_date(value):
+
     if value is None:
         return None
 
@@ -903,7 +962,6 @@ def parse_date(value):
     if not value:
         return None
 
-    # ISO timestamps
     match = re.search(
         r"\d{4}-\d{2}-\d{2}",
         value
@@ -923,6 +981,7 @@ def parse_date(value):
     ):
 
         try:
+
             return datetime.strptime(
                 value,
                 fmt
@@ -935,6 +994,7 @@ def parse_date(value):
 
 
 def date_string(value):
+
     d = parse_date(
         value
     )
@@ -950,6 +1010,7 @@ def date_string(value):
 # ============================================================
 
 def recursive_values(obj):
+
     if isinstance(obj, dict):
 
         for key, value in obj.items():
@@ -976,6 +1037,7 @@ def first_value_recursive(
     exact_keys=None,
     key_fragments=None
 ):
+
     exact_keys = exact_keys or []
     key_fragments = key_fragments or []
 
@@ -1017,14 +1079,16 @@ def first_value_recursive(
                 [],
                 {},
             ):
-
                 return value
 
     return ""
 
 
 def normalize_key_name(value):
-    value = str(value or "")
+
+    value = str(
+        value or ""
+    )
 
     value = repair_mojibake(
         value
@@ -1046,6 +1110,7 @@ def normalize_key_name(value):
 # ============================================================
 
 def country_from_code(value):
+
     value = choose_multilingual_text(
         value
     ).strip().upper()
@@ -1062,6 +1127,7 @@ def country_from_code(value):
 
 
 def extract_country(item):
+
     candidates = [
         item.get("buyer-country"),
         item.get("buyerCountry"),
@@ -1098,7 +1164,105 @@ def extract_country(item):
     return ""
 
 
+# ============================================================
+# IDENTIFICAÇÃO DE PAÍS EM TEXTO
+# ============================================================
+
+COUNTRY_TEXT_PATTERNS = {
+    "afghanistan": "Afeganistão",
+    "serbia": "Sérvia",
+    "pakistan": "Paquistão",
+    "india": "Índia",
+    "bangladesh": "Bangladesh",
+    "nepal": "Nepal",
+    "morocco": "Marrocos",
+    "algeria": "Argélia",
+    "tunisia": "Tunísia",
+    "egypt": "Egito",
+    "south africa": "África do Sul",
+    "kenya": "Quénia",
+    "uganda": "Uganda",
+    "tanzania": "Tanzânia",
+    "mozambique": "Moçambique",
+    "nigeria": "Nigéria",
+    "ghana": "Gana",
+    "ethiopia": "Etiópia",
+    "colombia": "Colômbia",
+    "brazil": "Brasil",
+    "chile": "Chile",
+    "peru": "Peru",
+    "argentina": "Argentina",
+    "mexico": "México",
+    "canada": "Canadá",
+    "united states": "Estados Unidos",
+    "usa": "Estados Unidos",
+    "portugal": "Portugal",
+    "spain": "Espanha",
+    "france": "França",
+    "germany": "Alemanha",
+    "italy": "Itália",
+    "netherlands": "Países Baixos",
+    "belgium": "Bélgica",
+    "ireland": "Irlanda",
+    "poland": "Polónia",
+    "romania": "Roménia",
+    "bulgaria": "Bulgária",
+    "croatia": "Croácia",
+    "greece": "Grécia",
+    "norway": "Noruega",
+    "switzerland": "Suíça",
+    "united kingdom": "Reino Unido",
+    "saudi arabia": "Arábia Saudita",
+    "united arab emirates": "Emirados Árabes Unidos",
+    "qatar": "Qatar",
+    "oman": "Omã",
+    "jordan": "Jordânia",
+    "turkey": "Turquia",
+    "china": "China",
+    "japan": "Japão",
+    "south korea": "Coreia do Sul",
+    "indonesia": "Indonésia",
+    "malaysia": "Malásia",
+    "thailand": "Tailândia",
+    "vietnam": "Vietname",
+    "australia": "Austrália",
+    "new zealand": "Nova Zelândia",
+}
+
+
+def country_from_text(*values):
+
+    text = " ".join(
+        clean_text(value)
+        for value in values
+        if value
+    )
+
+    text_n = normalize_text(
+        text
+    )
+
+    if not text_n:
+        return ""
+
+    for pattern, country in COUNTRY_TEXT_PATTERNS.items():
+
+        pattern_n = normalize_text(
+            pattern
+        )
+
+        if pattern_n in text_n:
+            return country
+
+    return ""
+
+
+# ============================================================
+# REGIÕES
+# ============================================================
+
 def region_from_country(country):
+
     n = normalize_text(
         country
     )
@@ -1135,6 +1299,7 @@ def region_from_country(country):
         "islandia",
         "suica",
         "reino unido",
+        "servia",
     }
 
     africa = {
@@ -1184,6 +1349,7 @@ def region_from_country(country):
         "malasia",
         "tailandia",
         "vietname",
+        "afeganistao",
     }
 
     oceania = {
@@ -1214,6 +1380,7 @@ def region_from_country(country):
 # ============================================================
 
 def normalize_cpvs(value):
+
     result = []
 
     if value is None:
@@ -1297,6 +1464,7 @@ SUPPORT_EXCLUSIONS_NORMALIZED = [
 
 
 def contains_any(text, terms):
+
     text = normalize_text(
         text
     )
@@ -1314,6 +1482,7 @@ def contains_any(text, terms):
 # ============================================================
 
 def get_search_mode(query):
+
     q = normalize_text(
         query
     )
@@ -1393,10 +1562,6 @@ def classify_result(
         )
     )
 
-    # --------------------------------------------------------
-    # PESQUISA DIRETA DE ARQUEOLOGIA
-    # --------------------------------------------------------
-
     if mode == "direct":
 
         if not direct_text:
@@ -1405,12 +1570,6 @@ def classify_result(
                 0
             )
 
-        # Excluir funções auxiliares quando o objecto
-        # é claramente fotografia, arquitectura, jurídico,
-        # comunicação, sinalética, etc.
-        #
-        # Excepção: se houver uma expressão inequívoca
-        # de trabalho arqueológico, mantém-se.
         strong_archaeology = any(
             phrase in combined
             for phrase in [
@@ -1481,10 +1640,6 @@ def classify_result(
             min(score, 100)
         )
 
-    # --------------------------------------------------------
-    # PESQUISA DE PATRIMÓNIO
-    # --------------------------------------------------------
-
     if mode == "heritage":
 
         if direct_text:
@@ -1515,10 +1670,6 @@ def classify_result(
             "Outro",
             0
         )
-
-    # --------------------------------------------------------
-    # PESQUISA ESPECÍFICA
-    # --------------------------------------------------------
 
     if mode == "specific":
 
@@ -1689,6 +1840,23 @@ def recent_enough(result):
             "date"
         )
     )
+
+    # --------------------------------------------------------
+    # CORREÇÃO 2.4:
+    # Quando a fonte não fornece data de publicação,
+    # utilizamos a deadline apenas para determinar se o
+    # registo é antigo.
+    #
+    # A deadline NÃO é apresentada como data de publicação.
+    # --------------------------------------------------------
+
+    if not d:
+
+        d = parse_date(
+            result.get(
+                "deadline"
+            )
+        )
 
     if not d:
         return True
@@ -1934,7 +2102,7 @@ def ted_notice_to_result(
         "cpv": cpvs,
         "category": category,
         "score": score,
-        "source": "TED \u2014 Europa",
+        "source": TED_SOURCE,
         "url": url,
         "description": description,
     }
@@ -2142,7 +2310,6 @@ def query_world_bank(
                         "notice_description",
                     ]
                 )
-
             )
 
             buyer = clean_text(
@@ -2160,7 +2327,7 @@ def query_world_bank(
             )
 
             # ------------------------------------------------
-            # País - tentativa directa + pesquisa recursiva
+            # PAÍS
             # ------------------------------------------------
 
             country_value = first_value(
@@ -2171,6 +2338,12 @@ def query_world_bank(
                     "country_name",
                     "countryCode",
                     "country_code",
+                    "countrycode",
+                    "country_iso",
+                    "country_iso3",
+                    "iso_country",
+                    "iso3",
+                    "iso3_code",
                 ]
             )
 
@@ -2184,9 +2357,16 @@ def query_world_bank(
                         "country_name",
                         "countryCode",
                         "country_code",
+                        "countrycode",
+                        "country_iso",
+                        "country_iso3",
+                        "iso_country",
+                        "iso3",
+                        "iso3_code",
                     ],
                     key_fragments=[
                         "country",
+                        "borrower_country",
                     ]
                 )
 
@@ -2194,20 +2374,34 @@ def query_world_bank(
                 country_value
             )
 
-            # Se for código de país
-            country_code = normalize_text(
-                country
-            ).upper()
+            if country:
 
-            if country_code in COUNTRY_MAP:
-                country = COUNTRY_MAP[
-                    country_code
-                ]
+                country = country_from_code(
+                    country
+                )
 
-            elif country_code in ISO3_MAP:
-                country = ISO3_MAP[
-                    country_code
-                ]
+            # ------------------------------------------------
+            # FALLBACK DO PAÍS
+            # ------------------------------------------------
+
+            if not country:
+
+                country = country_from_text(
+                    buyer,
+                    title,
+                    description,
+                    clean_text(
+                        first_value(
+                            row,
+                            [
+                                "project_name",
+                                "project",
+                                "project_title",
+                                "borrower",
+                            ]
+                        )
+                    )
+                )
 
             # ------------------------------------------------
             # CPV
@@ -2241,6 +2435,10 @@ def query_world_bank(
                     "date",
                     "published_date",
                     "publishedDate",
+                    "posting_date",
+                    "posted_date",
+                    "created_date",
+                    "createdDate",
                 ]
             )
 
@@ -2258,10 +2456,14 @@ def query_world_bank(
                         "bid_publication_date",
                         "published_date",
                         "publishedDate",
+                        "posting_date",
+                        "posted_date",
                     ],
                     key_fragments=[
                         "publication",
                         "published",
+                        "posting",
+                        "posted",
                     ]
                 )
 
@@ -2280,6 +2482,8 @@ def query_world_bank(
                     "closing_date",
                     "closingDate",
                     "submission_date",
+                    "procurement_deadline",
+                    "bid_deadline",
                 ]
             )
 
@@ -2296,6 +2500,8 @@ def query_world_bank(
                         "closing_date",
                         "closingDate",
                         "submission_date",
+                        "procurement_deadline",
+                        "bid_deadline",
                     ],
                     key_fragments=[
                         "deadline",
@@ -2365,6 +2571,14 @@ def query_world_bank(
                 "description": description,
             }
 
+            # ------------------------------------------------
+            # FILTRO TEMPORAL
+            #
+            # Se a data de publicação estiver vazia mas a
+            # deadline for antiga, recent_enough() elimina
+            # correctamente o resultado.
+            # ------------------------------------------------
+
             if recent_enough(
                 item
             ):
@@ -2406,12 +2620,6 @@ def query_south_africa(
     diagnostics,
     search_mode="direct"
 ):
-    """
-    Mantido para diagnóstico futuro.
-
-    Não é utilizado na pesquisa automática
-    porque o endpoint actual apresenta timeout.
-    """
 
     try:
 
@@ -2601,7 +2809,7 @@ def query_south_africa(
                 "cpv": cpvs,
                 "category": category,
                 "score": score,
-                "source": "South Africa eTenders \u2014 OCDS",
+                "source": SOUTH_AFRICA_SOURCE,
                 "url": clean_text(
                     release.get("url")
                     or release.get("id")
@@ -2618,7 +2826,7 @@ def query_south_africa(
                 )
 
         diagnostics.append({
-            "source": "South Africa eTenders \u2014 OCDS",
+            "source": SOUTH_AFRICA_SOURCE,
             "term": term,
             "ok": True,
             "count": len(results),
@@ -2631,7 +2839,7 @@ def query_south_africa(
     except Exception as exc:
 
         diagnostics.append({
-            "source": "South Africa eTenders \u2014 OCDS",
+            "source": SOUTH_AFRICA_SOURCE,
             "term": term,
             "ok": False,
             "count": 0,
@@ -2782,7 +2990,7 @@ def query_secop(
             item = {
                 "title": title,
                 "buyer": buyer,
-                "country": "Colômbia",
+                "country": "Col\u00f4mbia",
                 "date": date_string(
                     date_value
                 ),
@@ -2792,7 +3000,7 @@ def query_secop(
                 "cpv": cpvs,
                 "category": category,
                 "score": score,
-                "source": "SECOP II \u2014 Colômbia",
+                "source": SECOP_SOURCE,
                 "url": clean_text(
                     row.get("url")
                     or row.get("link")
@@ -2809,7 +3017,7 @@ def query_secop(
                 )
 
         diagnostics.append({
-            "source": "SECOP II \u2014 Colômbia",
+            "source": SECOP_SOURCE,
             "term": term,
             "ok": True,
             "count": len(results),
@@ -2822,7 +3030,7 @@ def query_secop(
     except Exception as exc:
 
         diagnostics.append({
-            "source": "SECOP II \u2014 Colômbia",
+            "source": SECOP_SOURCE,
             "term": term,
             "ok": False,
             "count": 0,
@@ -2850,18 +3058,18 @@ AUTOMATIC_TERMS_TED = [
     "archaeological fieldwork",
     "archaeological watching brief",
 
-    "archéologie",
-    "archéologique",
-    "fouilles archéologiques",
+    "arch\u00e9ologie",
+    "arch\u00e9ologique",
+    "fouilles arch\u00e9ologiques",
 
     "arqueologia",
-    "arqueológico",
-    "arqueológica",
-    "escavação arqueológica",
-    "acompanhamento arqueológico",
+    "arqueol\u00f3gico",
+    "arqueol\u00f3gica",
+    "escava\u00e7\u00e3o arqueol\u00f3gica",
+    "acompanhamento arqueol\u00f3gico",
 
-    "archäologie",
-    "archäologisch",
+    "arch\u00e4ologie",
+    "arch\u00e4ologisch",
 ]
 
 AUTOMATIC_TERMS_WORLD_BANK = [
@@ -2878,14 +3086,14 @@ AUTOMATIC_TERMS_WORLD_BANK = [
 
 AUTOMATIC_TERMS_SECOP = [
     "arqueologia",
-    "arqueológico",
-    "arqueológica",
-    "arqueólogo",
-    "arqueóloga",
-    "escavação arqueológica",
-    "acompanhamento arqueológico",
-    "prospeção arqueológica",
-    "prospecção arqueológica",
+    "arqueol\u00f3gico",
+    "arqueol\u00f3gica",
+    "arque\u00f3logo",
+    "arque\u00f3loga",
+    "escava\u00e7\u00e3o arqueol\u00f3gica",
+    "acompanhamento arqueol\u00f3gico",
+    "prospe\u00e7\u00e3o arqueol\u00f3gica",
+    "prospec\u00e7\u00e3o arqueol\u00f3gica",
     "archaeology",
     "archaeological",
     "archaeologist",
@@ -3166,7 +3374,7 @@ def health():
     return {
         "ok": True,
         "app": "Arqueologia Radar",
-        "version": "2.3",
+        "version": "2.4",
         "period_days": PERIOD_DAYS,
         "sources": len(
             SOURCES
@@ -3339,18 +3547,10 @@ def search(
         }
     )
 
-    # --------------------------------------------------------
-    # PESQUISA
-    # --------------------------------------------------------
-
     results = automatic_search(
         query,
         diagnostics
     )
-
-    # --------------------------------------------------------
-    # NORMALIZAÇÃO
-    # --------------------------------------------------------
 
     normalized_results = []
 
@@ -3380,27 +3580,15 @@ def search(
             normalized
         )
 
-    # --------------------------------------------------------
-    # DUPLICADOS
-    # --------------------------------------------------------
-
     normalized_results = dedupe_results(
         normalized_results
     )
-
-    # --------------------------------------------------------
-    # FILTROS
-    # --------------------------------------------------------
 
     normalized_results = apply_filters(
         normalized_results,
         region=region,
         category=category,
     )
-
-    # --------------------------------------------------------
-    # REGIÕES
-    # --------------------------------------------------------
 
     regions = build_regions(
         normalized_results
@@ -3510,7 +3698,7 @@ def app_js():
 
     return JSONResponse({
         "ok": False,
-        "error": "app.js não encontrado."
+        "error": "app.js n\u00e3o encontrado."
     })
 
 
