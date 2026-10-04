@@ -429,7 +429,7 @@ TED_FIELDS = [
     # TÍTULO
     "notice-title",
 
-    # LÍNGUA OFICIAL DO AVISO
+    # LÍNGUA OFICIAL
     "official-language",
 
     # ENTIDADE / PAÍS
@@ -454,6 +454,7 @@ TED_FIELDS = [
     "description-lot"
 
 ]
+
 
 # ============================================================
 # MAPA DE PAÍSES
@@ -732,6 +733,32 @@ def normalize_text(value):
 
     return value.lower()
 
+
+# ============================================================
+# CONSTRUÇÃO DA QUERY TED
+# ============================================================
+
+def build_ted_query(term):
+
+    term = clean_query(
+        term
+    )
+
+    if not term:
+        term = "archaeology"
+
+    # Pesquisa de texto livre no TED.
+    #
+    # As aspas são mantidas para termos compostos.
+    # Termos simples ficam igualmente protegidos.
+    escaped = term.replace(
+        '"',
+        '\\"'
+    )
+
+    return f'FT~"{escaped}"'
+
+
 # ============================================================
 # LIMPEZA DOS TÍTULOS TED
 # ============================================================
@@ -739,15 +766,8 @@ def normalize_text(value):
 def choose_multilingual_text(value):
 
     """
-    Escolhe uma versão linguística quando o TED devolve
-    o título como uma estrutura multilingue.
-
-    Dá preferência a:
-    1. língua oficial indicada pelo próprio TED;
-    2. inglês;
-    3. português;
-    4. francês;
-    5. espanhol;
+    Quando o TED devolve o campo como estrutura multilingue,
+    tenta escolher primeiro uma língua preferencial.
     """
 
     if value is None:
@@ -756,14 +776,19 @@ def choose_multilingual_text(value):
     if isinstance(value, dict):
 
         preferred_keys = [
+
             "eng",
             "en",
+
             "por",
             "pt",
+
             "fra",
             "fr",
+
             "spa",
             "es"
+
         ]
 
         for key in preferred_keys:
@@ -812,23 +837,10 @@ def clean_ted_title(
     """
     Limpa títulos TED/eForms que possam conter várias
     versões linguísticas consecutivas.
-
-    Exemplo problemático:
-
-    Románia – Régészeti szolgáltatások
-    Rumānija – Arheoloģiskie pakalpojumi
-    România – Servicii de arheologie
-
-    O objetivo é devolver apenas uma versão legível.
     """
 
     if title is None:
         return ""
-
-    # --------------------------------------------------------
-    # 1. Se o TED devolver uma estrutura multilingue,
-    #    escolher uma das versões.
-    # --------------------------------------------------------
 
     title = choose_multilingual_text(
         title
@@ -850,10 +862,6 @@ def clean_ted_title(
 
     if not title:
         return ""
-
-    # --------------------------------------------------------
-    # 2. Normalizar o código da língua oficial.
-    # --------------------------------------------------------
 
     official_language = flatten(
         official_language
@@ -930,6 +938,7 @@ def clean_ted_title(
 
         "hrv": "hr",
         "croatian": "hr"
+
     }
 
     official_language = language_map.get(
@@ -938,74 +947,55 @@ def clean_ted_title(
     )
 
     # --------------------------------------------------------
-    # 3. Remover separadores estranhos e espaços duplicados.
-    # --------------------------------------------------------
-
-    title = re.sub(
-        r"\s+",
-        " ",
-        title
-    ).strip()
-
-    # --------------------------------------------------------
-    # 4. Caso simples:
-    #    título já curto e sem sinais de múltiplas línguas.
+    # Se o título já é curto, não o destruir.
     # --------------------------------------------------------
 
     if len(title) <= 220:
-
-        language_markers = [
-            "românia",
-            "romania",
-            "románia",
-            "rumānija",
-            "france",
-            "frança",
-            "francia",
-            "germany",
-            "deutschland",
-            "alemmanha",
-            "alemania",
-            "polska",
-            "poland",
-            "polska",
-            "italia",
-            "italy",
-            "españa",
-            "spain",
-            "portugal",
-            "nederland",
-            "netherlands"
-        ]
 
         normalized_title = normalize_text(
             title
         )
 
-        marker_count = 0
+        language_markers = [
 
-        for marker in language_markers:
+            "romania",
+            "romania",
+            "rumanija",
+            "france",
+            "franca",
+            "francia",
+            "germany",
+            "deutschland",
+            "alemania",
+            "polska",
+            "poland",
+            "italia",
+            "italy",
+            "espana",
+            "spain",
+            "portugal",
+            "nederland",
+            "netherlands"
 
-            if normalize_text(marker) in normalized_title:
+        ]
 
-                marker_count += 1
+        marker_count = sum(
 
-        # Se só houver uma referência linguística,
-        # provavelmente já temos um título normal.
+            1
+
+            for marker in language_markers
+
+            if normalize_text(marker)
+            in normalized_title
+
+        )
+
         if marker_count <= 1:
 
             return title
 
     # --------------------------------------------------------
-    # 5. Dividir títulos multilíngues.
-    #
-    # TED pode devolver:
-    #
-    # País – Título País – Título País – Título
-    #
-    # ou:
-    #
-    # País – Título – País – Título
+    # Separar possíveis versões linguísticas.
     # --------------------------------------------------------
 
     parts = re.split(
@@ -1024,12 +1014,9 @@ def clean_ted_title(
     ]
 
     # --------------------------------------------------------
-    # 6. Procurar blocos do tipo:
+    # Procurar pares:
     #
     # País – Título
-    #
-    # Quando existem várias línguas, normalmente os blocos
-    # aparecem consecutivamente.
     # --------------------------------------------------------
 
     country_title_candidates = []
@@ -1069,11 +1056,6 @@ def clean_ted_title(
 
             })
 
-    # --------------------------------------------------------
-    # 7. Se encontrámos vários blocos, escolher o título
-    #    mais informativo.
-    # --------------------------------------------------------
-
     if country_title_candidates:
 
         candidates = [
@@ -1091,7 +1073,6 @@ def clean_ted_title(
 
         if candidates:
 
-            # Preferir uma versão que contenha arqueologia.
             archaeology_candidates = [
 
                 candidate
@@ -1120,73 +1101,71 @@ def clean_ted_title(
 
             if archaeology_candidates:
 
-                # Se a língua oficial estiver identificada,
-                # tentar escolher uma versão compatível.
-                if official_language:
+                language_preferences = {
 
-                    language_preferences = {
+                    "en": [
+                        "archaeolog"
+                    ],
 
-                        "en": [
-                            "archaeolog"
-                        ],
+                    "pt": [
+                        "arqueolog"
+                    ],
 
-                        "pt": [
-                            "arqueolog"
-                        ],
+                    "fr": [
+                        "archéolog"
+                    ],
 
-                        "fr": [
-                            "archéolog"
-                        ],
+                    "es": [
+                        "arqueolog"
+                    ],
 
-                        "es": [
-                            "arqueolog"
-                        ],
+                    "de": [
+                        "archäolog",
+                        "archaolog"
+                    ],
 
-                        "de": [
-                            "archäolog",
-                            "archaolog"
-                        ],
+                    "it": [
+                        "archeolog"
+                    ],
 
-                        "it": [
-                            "archeolog"
-                        ],
+                    "ro": [
+                        "arheolog"
+                    ],
 
-                        "ro": [
-                            "arheolog"
-                        ],
+                    "pl": [
+                        "archeolog"
+                    ],
 
-                        "pl": [
-                            "archeolog"
-                        ],
+                    "nl": [
+                        "archeolog"
+                    ],
 
-                        "nl": [
-                            "archeolog"
-                        ],
+                    "hu": [
+                        "régész"
+                    ],
 
-                        "hu": [
-                            "régész"
-                        ],
+                    "lv": [
+                        "arheolog"
+                    ],
 
-                        "lv": [
-                            "arheolog"
-                        ],
+                    "lt": [
+                        "archeolog"
+                    ],
 
-                        "lt": [
-                            "archeolog"
-                        ],
+                    "el": [
+                        "archaiolog"
+                    ]
 
-                        "el": [
-                            "archaiolog"
-                        ]
+                }
 
-                    }
-
-                    preferred_terms = (
-                        language_preferences.get(
-                            official_language,
-                            []
-                        )
+                preferred_terms = (
+                    language_preferences.get(
+                        official_language,
+                        []
                     )
+                )
+
+                if preferred_terms:
 
                     for candidate in (
                         archaeology_candidates
@@ -1200,7 +1179,8 @@ def clean_ted_title(
 
                         if any(
 
-                            term in candidate_normalized
+                            term
+                            in candidate_normalized
 
                             for term
                             in preferred_terms
@@ -1211,14 +1191,10 @@ def clean_ted_title(
 
                 return archaeology_candidates[0]
 
-            # Caso não haja arqueologia explícita,
-            # escolher o último título suficientemente
-            # informativo.
             return candidates[-1]
 
     # --------------------------------------------------------
-    # 8. Fallback para títulos que não seguem a estrutura
-    #    País – Título.
+    # Fallback para estruturas sem pares claros.
     # --------------------------------------------------------
 
     long_parts = [
@@ -1233,7 +1209,6 @@ def clean_ted_title(
 
     if long_parts:
 
-        # Procurar primeiro uma parte com arqueologia.
         for part in long_parts:
 
             normalized_part = normalize_text(
@@ -1260,10 +1235,6 @@ def clean_ted_title(
                 return part
 
         return long_parts[-1]
-
-    # --------------------------------------------------------
-    # 9. Última salvaguarda.
-    # --------------------------------------------------------
 
     if len(title) > 220:
 
@@ -1497,12 +1468,15 @@ def extract_country(notice):
             clean_part = part.strip()
 
             if (
+
                 clean_part
+
                 and clean_part.upper()
                 not in [
                     existing.upper()
                     for existing in unique_parts
                 ]
+
             ):
 
                 unique_parts.append(
@@ -1608,31 +1582,25 @@ def extract_cpvs(notice):
 # ============================================================
 # DEADLINE
 # ============================================================
+
 def extract_deadline(notice):
-    """
-    Extrai a data limite de apresentação de propostas do TED/eForms.
 
-    Prioridade:
-    1. BT-131 / TenderSubmissionDeadlinePeriod
-    2. deadline-date-lot
-    3. deadline-receipt-tender-date-lot
-    4. outros campos TED/eForms relacionados
-    """
+    if not isinstance(
+        notice,
+        (dict, list)
+    ):
 
-    if not isinstance(notice, (dict, list)):
         return ""
 
-    # ------------------------------------------------------------
-    # Procura recursivamente uma data dentro de uma estrutura.
-    # ------------------------------------------------------------
     def find_date(value):
+
         if value is None:
             return ""
 
         if isinstance(value, str):
+
             value = value.strip()
 
-            # ISO: 2026-10-27
             match = re.search(
                 r"\b(20\d{2}-\d{2}-\d{2})(?:[T\s]|$)",
                 value
@@ -1641,8 +1609,6 @@ def extract_deadline(notice):
             if match:
                 return match.group(1)
 
-            # Também aceita data ISO com offset:
-            # 2026-10-27+02:00
             match = re.search(
                 r"\b(20\d{2}-\d{2}-\d{2})[+-]\d{2}:\d{2}\b",
                 value
@@ -1655,9 +1621,8 @@ def extract_deadline(notice):
 
         if isinstance(value, dict):
 
-            # Primeiro procurar explicitamente EndDate,
-            # que é a estrutura oficial do BT-131.
             priority_keys = [
+
                 "EndDate",
                 "endDate",
                 "end-date",
@@ -1666,45 +1631,53 @@ def extract_deadline(notice):
                 "deadline-date",
                 "deadline-date-lot",
                 "deadline-receipt-tender-date-lot",
-                "deadlineReceiptTenderDateLot",
+                "deadlineReceiptTenderDateLot"
+
             ]
 
             for key in priority_keys:
+
                 if key in value:
-                    result = find_date(value[key])
+
+                    result = find_date(
+                        value[key]
+                    )
+
                     if result:
                         return result
 
-            # Depois pesquisar recursivamente.
             for key, item in value.items():
-                result = find_date(item)
+
+                result = find_date(
+                    item
+                )
+
                 if result:
                     return result
 
             return ""
 
         if isinstance(value, list):
+
             for item in value:
-                result = find_date(item)
+
+                result = find_date(
+                    item
+                )
+
                 if result:
                     return result
 
         return ""
 
-    # ------------------------------------------------------------
-    # 1. Estrutura oficial eForms:
-    #
-    # TenderSubmissionDeadlinePeriod
-    #     EndDate
-    #     EndTime
-    #
-    # ------------------------------------------------------------
     deadline_structures = [
+
         "TenderSubmissionDeadlinePeriod",
         "tenderSubmissionDeadlinePeriod",
         "tender-submission-deadline-period",
         "TenderSubmissionDeadline",
-        "tenderSubmissionDeadline",
+        "tenderSubmissionDeadline"
+
     ]
 
     def search_named_structure(value):
@@ -1712,37 +1685,51 @@ def extract_deadline(notice):
         if isinstance(value, dict):
 
             for key in deadline_structures:
+
                 if key in value:
-                    result = find_date(value[key])
+
+                    result = find_date(
+                        value[key]
+                    )
+
                     if result:
                         return result
 
             for item in value.values():
-                result = search_named_structure(item)
+
+                result = search_named_structure(
+                    item
+                )
+
                 if result:
                     return result
 
         elif isinstance(value, list):
 
             for item in value:
-                result = search_named_structure(item)
+
+                result = search_named_structure(
+                    item
+                )
+
                 if result:
                     return result
 
         return ""
 
-    deadline = search_named_structure(notice)
+    deadline = search_named_structure(
+        notice
+    )
 
     if deadline:
         return deadline
 
-    # ------------------------------------------------------------
-    # 2. Campos TED/eForms conhecidos
-    # ------------------------------------------------------------
     possible_fields = [
+
         "deadline-date-lot",
         "deadline-receipt-tender-date-lot",
         "deadline-receipt-request",
+        "deadline-receipt-request-date-lot",
         "deadline-date",
         "deadline",
         "deadlineDate",
@@ -1751,7 +1738,8 @@ def extract_deadline(notice):
         "deadlineReceiptRequest",
         "BT-131",
         "BT-131-Lot",
-        "BT-131(d)-Lot",
+        "BT-131(d)-Lot"
+
     ]
 
     def search_fields(value):
@@ -1759,26 +1747,41 @@ def extract_deadline(notice):
         if isinstance(value, dict):
 
             for key in possible_fields:
+
                 if key in value:
-                    result = find_date(value[key])
+
+                    result = find_date(
+                        value[key]
+                    )
+
                     if result:
                         return result
 
             for item in value.values():
-                result = search_fields(item)
+
+                result = search_fields(
+                    item
+                )
+
                 if result:
                     return result
 
         elif isinstance(value, list):
 
             for item in value:
-                result = search_fields(item)
+
+                result = search_fields(
+                    item
+                )
+
                 if result:
                     return result
 
         return ""
 
-    deadline = search_fields(notice)
+    deadline = search_fields(
+        notice
+    )
 
     if deadline:
         return deadline
@@ -1977,83 +1980,6 @@ def classify_result(
 
 
 # ============================================================
-# QUERY TED
-# ============================================================
-
-def clean_ted_title(title):
-    """
-    Limpa títulos TED/eForms que possam vir com várias versões linguísticas.
-    Mantém apenas uma versão curta e legível.
-    """
-    if title is None:
-        return ""
-
-    title = flatten(title)
-    title = repair_mojibake(title)
-    title = html.unescape(title)
-    title = re.sub(r"\s+", " ", title).strip()
-
-    if not title:
-        return ""
-
-    # Separadores típicos usados quando o TED devolve várias versões
-    # linguísticas do mesmo título.
-    parts = re.split(r"\s+[–—-]\s+", title)
-
-    # Remove partes vazias
-    parts = [p.strip() for p in parts if p.strip()]
-
-    if len(parts) <= 2:
-        return title
-
-    # Detecta blocos repetidos do tipo:
-    # País – Título
-    # País – Título
-    # País – Título
-    #
-    # Nestes casos ficamos com o último bloco, que normalmente
-    # corresponde à versão principal devolvida pelo TED.
-    country_title_candidates = []
-
-    for i in range(0, len(parts) - 1, 2):
-        country = parts[i].strip()
-        subject = parts[i + 1].strip()
-
-        if (
-            len(country) <= 80
-            and len(subject) >= 3
-            and not re.search(r"\b(202[0-9]|20[0-9]{2})\b", country)
-        ):
-            country_title_candidates.append(
-                f"{country} – {subject}"
-            )
-
-    if country_title_candidates:
-        # Preferimos a última versão linguística.
-        candidate = country_title_candidates[-1]
-
-        if len(candidate) <= 220:
-            return candidate
-
-    # Caso o título não siga o padrão País – Título,
-    # procurar blocos repetidos e conservar o último segmento
-    # suficientemente informativo.
-    long_parts = [p for p in parts if len(p) >= 10]
-
-    if long_parts:
-        candidate = long_parts[-1]
-
-        if len(candidate) <= 220:
-            return candidate
-
-    # Última salvaguarda: limite de tamanho sem cortar no meio
-    if len(title) > 220:
-        return title[:217].rstrip() + "..."
-
-    return title
-
-
-# ============================================================
 # CONVERTER AVISO TED EM RESULTADO
 # ============================================================
 
@@ -2087,29 +2013,29 @@ def notice_to_result(
         return None
 
     title = (
-    notice.get(
-        "notice-title"
+        notice.get(
+            "notice-title"
+        )
+        or notice.get(
+            "noticeTitle"
+        )
+        or ""
     )
-    or notice.get(
-        "noticeTitle"
-    )
-    or ""
-)
 
-official_language = (
-    notice.get(
-        "official-language"
+    official_language = (
+        notice.get(
+            "official-language"
+        )
+        or notice.get(
+            "officialLanguage"
+        )
+        or ""
     )
-    or notice.get(
-        "officialLanguage"
-    )
-    or ""
-)
 
-title = clean_ted_title(
-    title,
-    official_language
-)
+    title = clean_ted_title(
+        title,
+        official_language
+    )
 
     buyer = (
         notice.get(
@@ -2243,17 +2169,23 @@ def query_ted(
 
     payload = {
 
-        "query": query,
+        "query":
+            query,
 
-        "fields": TED_FIELDS,
+        "fields":
+            TED_FIELDS,
 
-        "page": 1,
+        "page":
+            1,
 
-        "limit": PAGE_SIZE,
+        "limit":
+            PAGE_SIZE,
 
-        "scope": "ACTIVE",
+        "scope":
+            "ACTIVE",
 
-        "checkQuerySyntax": False,
+        "checkQuerySyntax":
+            False,
 
         "paginationMode":
             "PAGE_NUMBER",
@@ -2554,14 +2486,6 @@ def query_world_bank(
                 description,
                 []
             )
-
-            # ====================================================
-            # FILTRO WORLD BANK
-            #
-            # O World Bank devolve muitos projetos gerais.
-            # Só mantemos resultados com alguma relação
-            # identificável com arqueologia ou património.
-            # ====================================================
 
             if category == "Outro":
 
@@ -2879,17 +2803,16 @@ def search(
             user_query
         ]
 
-    # --------------------------------------------------------
-    # REMOVER TERMOS DUPLICADOS
-    # --------------------------------------------------------
-
     clean_terms = []
 
     for term in search_terms:
 
         if term.lower() not in [
+
             x.lower()
+
             for x in clean_terms
+
         ]:
 
             clean_terms.append(
@@ -2901,17 +2824,16 @@ def search(
     for term in world_bank_terms:
 
         if term.lower() not in [
+
             x.lower()
+
             for x in clean_world_bank_terms
+
         ]:
 
             clean_world_bank_terms.append(
                 term
             )
-
-    # --------------------------------------------------------
-    # EXECUÇÃO EM PARALELO
-    # --------------------------------------------------------
 
     tasks = []
 
@@ -2973,17 +2895,9 @@ def search(
 
                 })
 
-    # --------------------------------------------------------
-    # DEDUPLICAÇÃO
-    # --------------------------------------------------------
-
     results = deduplicate_results(
         results
     )
-
-    # --------------------------------------------------------
-    # FILTRO DE REGIÃO
-    # --------------------------------------------------------
 
     if region:
 
@@ -3000,10 +2914,6 @@ def search(
 
         ]
 
-    # --------------------------------------------------------
-    # FILTRO DE CATEGORIA
-    # --------------------------------------------------------
-
     if category:
 
         results = [
@@ -3018,10 +2928,6 @@ def search(
             == category
 
         ]
-
-    # --------------------------------------------------------
-    # REMOVER DEADLINES EXPIRADOS
-    # --------------------------------------------------------
 
     filtered_results = []
 
@@ -3049,10 +2955,6 @@ def search(
         )
 
     results = filtered_results
-
-    # --------------------------------------------------------
-    # ORDENAÇÃO
-    # --------------------------------------------------------
 
     def result_date(
         result
@@ -3088,10 +2990,6 @@ def search(
 
     )
 
-    # --------------------------------------------------------
-    # CONTADORES
-    # --------------------------------------------------------
-
     api_count = sum(
 
         1
@@ -3125,10 +3023,6 @@ def search(
         )
 
     )
-
-    # --------------------------------------------------------
-    # RESPOSTA
-    # --------------------------------------------------------
 
     return {
 
@@ -3272,10 +3166,14 @@ def health():
 
         "api_sources":
             sum(
+
                 1
+
                 for source in SOURCES
+
                 if source["mode"]
                 == "api"
+
             ),
 
         "date":
