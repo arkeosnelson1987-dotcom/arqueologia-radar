@@ -739,7 +739,10 @@ def normalize_text(value):
 # ============================================================
 
 def build_ted_query(term):
-    term = clean_query(term)
+
+    term = clean_query(
+        term
+    )
 
     if not term:
         return ""
@@ -749,8 +752,13 @@ def build_ted_query(term):
         return f"FT~{term}"
 
     # Várias palavras: pesquisa como expressão
-    escaped = term.replace('"', '\\"')
+    escaped = term.replace(
+        '"',
+        '\\"'
+    )
+
     return f'FT~"{escaped}"'
+
 
 # ============================================================
 # LIMPEZA DOS TÍTULOS TED
@@ -939,10 +947,6 @@ def clean_ted_title(
         official_language
     )
 
-    # --------------------------------------------------------
-    # Se o título já é curto, não o destruir.
-    # --------------------------------------------------------
-
     if len(title) <= 220:
 
         normalized_title = normalize_text(
@@ -951,7 +955,6 @@ def clean_ted_title(
 
         language_markers = [
 
-            "romania",
             "romania",
             "rumanija",
             "france",
@@ -987,10 +990,6 @@ def clean_ted_title(
 
             return title
 
-    # --------------------------------------------------------
-    # Separar possíveis versões linguísticas.
-    # --------------------------------------------------------
-
     parts = re.split(
         r"\s+[–—-]\s+",
         title
@@ -1005,12 +1004,6 @@ def clean_ted_title(
         if part.strip()
 
     ]
-
-    # --------------------------------------------------------
-    # Procurar pares:
-    #
-    # País – Título
-    # --------------------------------------------------------
 
     country_title_candidates = []
 
@@ -1185,10 +1178,6 @@ def clean_ted_title(
                 return archaeology_candidates[0]
 
             return candidates[-1]
-
-    # --------------------------------------------------------
-    # Fallback para estruturas sem pares claros.
-    # --------------------------------------------------------
 
     long_parts = [
 
@@ -2181,10 +2170,7 @@ def query_ted(
             False,
 
         "paginationMode":
-            "PAGE_NUMBER",
-
-        "onlyLatestVersions":
-            True
+            "PAGE_NUMBER"
 
     }
 
@@ -2501,7 +2487,8 @@ def query_world_bank(
                     ),
 
                 "deadline":
-                    flatten(deadline),
+                    flatten(deadline
+                    ),
 
                 "cpv": [],
 
@@ -3088,10 +3075,7 @@ def test_ted_country():
             False,
 
         "paginationMode":
-            "PAGE_NUMBER",
-
-        "onlyLatestVersions":
-            True
+            "PAGE_NUMBER"
 
     }
 
@@ -3270,7 +3254,9 @@ def manifest():
             "standalone"
 
     })
-    # ============================================================
+
+
+# ============================================================
 # TESTE TED MINIMAL
 # ============================================================
 
