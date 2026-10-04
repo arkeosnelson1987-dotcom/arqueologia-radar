@@ -1,10 +1,7 @@
 const $ = id => document.getElementById(id);
-
-
 // ============================================================
 // FUNÇÕES AUXILIARES
 // ============================================================
-
 const esc = s =>
   String(s ?? '').replace(/[&<>"]/g, c => ({
     '&': '&amp;',
@@ -12,25 +9,17 @@ const esc = s =>
     '>': '&gt;',
     '"': '&quot;'
   }[c]));
-
-
-// Limpa texto que eventualmente ainda contenha HTML
 function cleanText(s) {
   if (!s) return '';
-
   const div = document.createElement('div');
   div.innerHTML = String(s);
-
   return (div.textContent || div.innerText || '')
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-
 // ============================================================
 // DIAGNÓSTICOS
 // ============================================================
-
 function diagnosticHtml(d) {
   if (d.ok) {
     return `
@@ -40,7 +29,6 @@ function diagnosticHtml(d) {
       </div>
     `;
   }
-
   return `
     <div class="diag error">
       🔴 <b>${esc(d.source)}</b>:
@@ -49,85 +37,58 @@ function diagnosticHtml(d) {
     </div>
   `;
 }
-
-
 // ============================================================
 // TIMEOUT
 // ============================================================
-
 async function fetchWithTimeout(url, options = {}, timeout = 60000) {
   const controller = new AbortController();
-
   const timer = setTimeout(() => {
     controller.abort();
   }, timeout);
-
   try {
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       cache: 'no-store'
     });
-
     return response;
-
   } finally {
     clearTimeout(timer);
   }
 }
-
-
 // ============================================================
 // FORMATAÇÃO DE DATAS
 // ============================================================
-
 function formatDate(value) {
   if (!value) return '';
-
   const text = String(value).trim();
-
-  // YYYY-MM-DD
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-
   if (match) {
     return `${match[3]}/${match[2]}/${match[1]}`;
   }
-
   return text;
 }
-
-
 // ============================================================
 // CRIAÇÃO DE CADA RESULTADO
 // ============================================================
-
 function resultHtml(x) {
-
   const title =
     cleanText(x.title) ||
     'Concurso sem título';
-
   const source =
     cleanText(x.source);
-
   const date =
     formatDate(x.date);
-
   const deadline =
     formatDate(x.deadline);
-
   const country =
     cleanText(x.country);
-
   const buyer =
     cleanText(x.buyer);
-
   const category =
     cleanText(x.category);
-
   const cpv =
     cleanText(x.cpv);
-
   const description =
     cleanText(
       x.description ||
@@ -135,34 +96,23 @@ function resultHtml(x) {
       x.summary ||
       ''
     );
-
   const url =
     x.url || '#';
-
-
   return `
     <article class="card">
-
       <div class="title">
         ${esc(title)}
       </div>
-
-
       <div class="meta">
-
         ${source
           ? `<b>Fonte:</b> ${esc(source)}`
           : ''
         }
-
         ${date
           ? ` · <b>Data:</b> ${esc(date)}`
           : ''
         }
-
       </div>
-
-
       ${country
         ? `
           <div class="meta">
@@ -171,8 +121,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       ${buyer
         ? `
           <div class="meta">
@@ -181,8 +129,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       ${deadline
         ? `
           <div class="meta deadline">
@@ -191,8 +137,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       ${cpv
         ? `
           <div class="meta">
@@ -201,8 +145,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       ${category
         ? `
           <div class="badge">
@@ -211,8 +153,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       ${description
         ? `
           <div class="description">
@@ -221,8 +161,6 @@ function resultHtml(x) {
         `
         : ''
       }
-
-
       <p>
         <a
           href="${esc(url)}"
@@ -232,143 +170,107 @@ function resultHtml(x) {
           Abrir concurso ↗
         </a>
       </p>
-
     </article>
   `;
 }
-
-
 // ============================================================
 // PESQUISA PRINCIPAL
 // ============================================================
-
 async function go() {
-
+  const qElement = $('q');
+  const statusElement = $('status');
+  const resultsElement = $('results');
+  const diagnosticsElement = $('diagnostics');
+  const regionElement = $('region');
+  const categoryElement = $('category');
+  if (!qElement || !statusElement || !resultsElement || !diagnosticsElement) {
+    console.error(
+      'Radar: elementos da página não encontrados.'
+    );
+    return;
+  }
   const q =
-    $('q').value.trim() ||
+    qElement.value.trim() ||
     'archaeology';
-
-
-  $('status').innerHTML =
+  statusElement.innerHTML =
     '🔎 <b>A pesquisar...</b> ' +
     'O Radar está a consultar as fontes automáticas.';
-
-
-  $('results').innerHTML = '';
-
-  $('diagnostics').innerHTML = '';
-
-
+  resultsElement.innerHTML = '';
+  diagnosticsElement.innerHTML = '';
   try {
-
-    const p = new URLSearchParams({
-
-      q,
-
-      region:
-        $('region').value,
-
-      category:
-        $('category').value
-
-    });
-
-
+    const p =
+      new URLSearchParams({
+        q,
+        region:
+          regionElement
+            ? regionElement.value
+            : '',
+        category:
+          categoryElement
+            ? categoryElement.value
+            : ''
+      });
     const url =
       '/api/search?' +
       p.toString();
-
-
     console.log(
       'Radar: a consultar',
       url
     );
-
-
     const r =
       await fetchWithTimeout(
         url,
         {},
         60000
       );
-
-
     console.log(
       'Radar: resposta recebida',
       r.status
     );
-
-
     const text =
       await r.text();
-
-
     console.log(
       'Radar: resposta recebida, tamanho:',
       text.length
     );
-
-
     let j;
-
-
     try {
-
       j = JSON.parse(text);
-
     } catch (e) {
-
       throw new Error(
         'A API respondeu, mas o navegador não conseguiu interpretar a resposta.'
       );
-
     }
-
-
     if (!r.ok) {
-
       throw new Error(
         j.detail ||
         'Erro do servidor.'
       );
-
     }
-
-
     const results =
       Array.isArray(j.results)
         ? j.results
         : [];
-
-
     const diagnostics =
       Array.isArray(j.diagnostics)
         ? j.diagnostics
         : [];
-
-
     const okSources =
       diagnostics.filter(
         x => x.ok
       ).length;
-
-
     const errorSources =
       diagnostics.filter(
         x => !x.ok
       ).length;
-
-
     // ========================================================
     // ESTADO DA PESQUISA
     // ========================================================
-
-    $('status').innerHTML =
+    statusElement.innerHTML =
       `Pesquisa concluída: ` +
       `<b>${results.length}</b> resultados encontrados. ` +
       `Fontes automáticas consultadas: ` +
       `<b>${okSources}</b>.` +
-
       (
         errorSources
           ? ` <span class="red">` +
@@ -376,41 +278,29 @@ async function go() {
             `</span>`
           : ''
       );
-
-
     // ========================================================
     // DIAGNÓSTICOS
     // ========================================================
-
-    $('diagnostics').innerHTML =
+    diagnosticsElement.innerHTML =
       diagnostics
         .map(diagnosticHtml)
         .join('');
-
-
     // ========================================================
     // RESULTADOS
     // ========================================================
-
     let h =
       results
         .map(resultHtml)
         .join('');
-
-
     // ========================================================
     // NENHUM RESULTADO
     // ========================================================
-
     if (!h) {
-
       h = `
         <section class="card empty">
-
           <div class="title">
             Não foram encontrados resultados nesta pesquisa.
           </div>
-
           <p>
             Tenta pesquisar por
             <b>archaeology</b>,
@@ -419,155 +309,145 @@ async function go() {
             ou
             <b>archaeological monitoring</b>.
           </p>
-
         </section>
       `;
     }
-
-
     // ========================================================
     // APRESENTAÇÃO
     // ========================================================
-
-    $('results').innerHTML =
+    resultsElement.innerHTML =
       h;
-
-
     // ========================================================
     // PORTAIS COMPLEMENTARES
     // ========================================================
-
     try {
-
       const sResponse =
         await fetchWithTimeout(
           '/api/sources',
           {},
           15000
         );
-
-
       if (sResponse.ok) {
-
         const s =
           await sResponse.json();
-
-
-        $('results').innerHTML += `
-
+        resultsElement.innerHTML += `
           <section class="card">
-
             <div class="title">
               🌍 Portais oficiais complementares
             </div>
-
             <p>
               Estas fontes já estão catalogadas no Radar.
               Nesta versão, são apresentadas como portais de
               consulta; a pesquisa automática será integrada
               progressivamente.
             </p>
-
-
             <div class="sources">
-
               ${s.map(x => `
-
                 <a
                   href="${esc(x.url)}"
                   target="_blank"
                   rel="noopener"
                 >
-
                   <b>
                     ${esc(x.name)}
                   </b>
-
                   — ${esc(x.region)}
-
                   ${
                     x.mode === 'api'
                       ? ' 🟢 automática'
                       : ' 🔵 portal'
                   }
-
                 </a>
-
               `).join('')}
-
             </div>
-
           </section>
-
         `;
       }
-
     } catch (sourcesError) {
-
       console.warn(
         'Não foi possível carregar os portais complementares:',
         sourcesError
       );
-
     }
-
-
   } catch (e) {
-
     console.error(
       'Radar:',
       e
     );
-
-
     if (e.name === 'AbortError') {
-
-      $('status').innerHTML = `
+      statusElement.innerHTML = `
         <span class="red">
           🔴 A pesquisa demorou demasiado tempo a responder.
           A API do Radar não respondeu dentro de 60 segundos.
         </span>
       `;
-
     } else {
-
-      $('status').innerHTML = `
+      statusElement.innerHTML = `
         <span class="red">
           🔴 Não foi possível concluir a pesquisa.
         </span>
       `;
-
-
-      $('diagnostics').innerHTML = `
+      diagnosticsElement.innerHTML = `
         <div class="diag error">
           ${esc(e.message || e)}
         </div>
       `;
     }
-
   }
-
 }
-
-
 // ============================================================
-// BOTÃO PESQUISAR
+// INICIALIZAÇÃO DO RADAR
 // ============================================================
-
-$('go').onclick = go;
-
-
+//
+// IMPORTANTE:
+// Esperamos que o HTML esteja completamente carregado antes
+// de procurar o botão, a caixa de pesquisa e os filtros.
+// Isto evita que o App.js seja executado antes dos elementos
+// existirem na página.
 // ============================================================
-// ENTER NA CAIXA DE PESQUISA
-// ============================================================
-
-$('q').addEventListener(
-  'keydown',
-  e => {
-
-    if (e.key === 'Enter') {
-      go();
-    }
-
+function initRadar() {
+  const button = $('go');
+  const searchBox = $('q');
+  if (!button) {
+    console.error(
+      'Radar: botão de pesquisa #go não encontrado.'
+    );
+    return;
   }
-);
+  if (!searchBox) {
+    console.error(
+      'Radar: caixa de pesquisa #q não encontrada.'
+    );
+    return;
+  }
+  // ==========================================================
+  // BOTÃO PESQUISAR
+  // ==========================================================
+  button.onclick = go;
+  // ==========================================================
+  // ENTER NA CAIXA DE PESQUISA
+  // ==========================================================
+  searchBox.addEventListener(
+    'keydown',
+    e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        go();
+      }
+    }
+  );
+  console.log(
+    'Radar: interface inicializada correctamente.'
+  );
+}
+// ============================================================
+// ARRANQUE
+// ============================================================
+if (document.readyState === 'loading') {
+  document.addEventListener(
+    'DOMContentLoaded',
+    initRadar
+  );
+} else {
+  initRadar();
+}
