@@ -1106,11 +1106,9 @@ TED_FIELDS = [
     "buyer-name",
     "buyer-country",
     "classification-cpv",
-    "notice-type",
-    "deadline-date",
+    "description-proc",
+    "description-glo",
     "deadline-date-lot",
-    "description",
-    "short-description",
 ]
 
 
