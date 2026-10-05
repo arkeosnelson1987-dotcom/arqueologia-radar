@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="2.5.1"
+    version="2.5.2"
 )
 
 REQUEST_TIMEOUT = 30
@@ -2082,7 +2082,7 @@ def home():
 @app.get("/app.js")
 def javascript():
     return FileResponse(
-        BASE_DIR / "App.js",
+        BASE_DIR / "app.js",
         media_type="application/javascript",
     )
 
