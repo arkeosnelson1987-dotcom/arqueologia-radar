@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pathlib import Path
 from datetime import date, datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 import html
 import re
 import requests
@@ -17,12 +17,14 @@ BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="Arqueologia Radar",
-    version="2.5.3",
+    version="2.6.0",
 )
 
 REQUEST_TIMEOUT = 30
 PERIOD_DAYS = 365
-PAGE_SIZE = 100
+
+# TED permite até 250 resultados por página.
+PAGE_SIZE = 250
 
 TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 
@@ -338,7 +340,6 @@ MAJOR_PROJECT_TERMS = [
     "aeroporto",
     "porto",
     "mineração",
-    "mineração",
     "oleoduto",
     "gasoduto",
     "energia",
@@ -428,6 +429,15 @@ AUTOMATIC_TERMS_SECOP = [
     "archaeological monitoring",
     "cultural heritage",
     "heritage",
+    "arqueologia",
+    "arqueológico",
+]
+
+
+AUTOMATIC_TERMS_BRAZIL = [
+    "archaeology",
+    "archaeological",
+    "archaeologist",
     "arqueologia",
     "arqueológico",
 ]
@@ -634,6 +644,21 @@ def normalize_text(value):
     if value is None:
         return ""
 
+    if isinstance(value, dict):
+        values = flatten_values(value)
+        return " ".join(
+            str(item)
+            for item in values
+            if item not in (None, "")
+        ).strip()
+
+    if isinstance(value, list):
+        return " ".join(
+            str(item)
+            for item in value
+            if item not in (None, "")
+        ).strip()
+
     text = str(value)
 
     text = html.unescape(text)
@@ -714,8 +739,12 @@ def parse_date(value):
     if not text:
         return None
 
+    # Remove espaços e variantes comuns do TED.
+    text = text.replace(" ", "")
+
     formats = [
         "%Y-%m-%d",
+        "%Y-%m-%d+%H:%M",
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%dT%H:%M:%SZ",
         "%Y-%m-%dT%H:%M:%S.%f",
@@ -751,7 +780,7 @@ def recent_enough(value):
     parsed = parse_date(value)
 
     if parsed is None:
-        return True
+        return False
 
     return parsed >= cutoff_date()
 
@@ -773,6 +802,8 @@ def flatten_values(value):
     if isinstance(value, dict):
         output = []
 
+        # Para estruturas multilingues do TED,
+        # damos preferência aos valores.
         for item in value.values():
             output.extend(
                 flatten_values(item)
@@ -832,6 +863,23 @@ def first_value(data, keys):
     )
 
 
+def safe_first_text(data, keys):
+    value = first_value(
+        data,
+        keys,
+    )
+
+    values = flatten_values(value)
+
+    for item in values:
+        text = normalize_text(item)
+
+        if text:
+            return text
+
+    return ""
+
+
 # ============================================================
 # PAÍS / REGIÃO
 # ============================================================
@@ -842,17 +890,27 @@ def country_from_text(value):
     if not text:
         return ""
 
+    # Primeiro códigos ISO2 isolados.
+    if len(text) == 2:
+        for code in COUNTRY_MAP:
+            if code.lower() == text:
+                return code
+
+    # Depois ISO3.
+    if len(text) == 3:
+        for code, iso3 in ISO3_MAP.items():
+            if iso3.lower() == text:
+                return code
+
     for code, name in COUNTRY_MAP.items():
 
-        if normalize_for_search(code) == text:
+        if normalize_for_search(name) == text:
             return code
 
-        if normalize_for_search(name) in text:
-            return code
-
-    for code, iso3 in ISO3_MAP.items():
-
-        if iso3.lower() == text:
+        if (
+            len(text) > 2
+            and normalize_for_search(name) in text
+        ):
             return code
 
     return ""
@@ -1035,11 +1093,13 @@ def make_result(
         normalize_text(buyer)
     )
 
-    country = str(country or "").upper().strip()
+    country = str(
+        country or ""
+    ).upper().strip()
 
     if len(country) == 3:
         country_name_value = country_name(country)
-        country_code = country
+        country_code = country_from_text(country)
     else:
         country_code = country_from_text(country)
         country_name_value = country_name(
@@ -1056,9 +1116,11 @@ def make_result(
     if not classification:
         return None
 
-    score = 100 if (
-        classification == "Arqueologia direta"
-    ) else 70
+    score = (
+        100
+        if classification == "Arqueologia direta"
+        else 70
+    )
 
     published_date = parse_date(
         published
@@ -1104,6 +1166,7 @@ TED_FIELDS = [
     "publication-date",
     "notice-title",
     "buyer-name",
+    "organisation-country-buyer",
     "buyer-country",
     "classification-cpv",
     "description-proc",
@@ -1136,6 +1199,9 @@ def query_ted(
         "paginationMode": "PAGE_NUMBER",
     }
 
+    # Pequena pausa para evitar rajadas contra a API TED.
+    time.sleep(0.20)
+
     try:
 
         response = requests.post(
@@ -1155,10 +1221,44 @@ def query_ted(
             "status_code": response.status_code,
         })
 
+        # Se houver rate limit, não insistimos imediatamente.
+        if response.status_code == 429:
+
+            diagnostics[-1]["error"] = (
+                "TED rate limit (429)"
+            )
+
+            time.sleep(2)
+
+            try:
+                response = requests.post(
+                    TED_URL,
+                    json=payload,
+                    timeout=REQUEST_TIMEOUT,
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
+                )
+
+                diagnostics[-1]["retry_status_code"] = (
+                    response.status_code
+                )
+
+            except Exception as retry_exc:
+
+                diagnostics[-1]["retry_error"] = (
+                    str(retry_exc)
+                )
+
+                return []
+
         if response.status_code != 200:
+
             diagnostics[-1]["error"] = (
                 response.text[:1000]
             )
+
             return []
 
         data = response.json()
@@ -1168,7 +1268,10 @@ def query_ted(
             [],
         )
 
-        if isinstance(notices, dict):
+        if isinstance(
+            notices,
+            dict,
+        ):
             notices = list(
                 notices.values()
             )
@@ -1183,7 +1286,7 @@ def query_ted(
             ):
                 continue
 
-            title = first_value(
+            title = safe_first_text(
                 notice,
                 [
                     "notice-title",
@@ -1191,16 +1294,18 @@ def query_ted(
                 ],
             )
 
-            description = first_value(
+            description = safe_first_text(
                 notice,
                 [
+                    "description-proc",
+                    "description-glo",
                     "description",
                     "short-description",
                     "notice-description",
                 ],
             )
 
-            buyer = first_value(
+            buyer = safe_first_text(
                 notice,
                 [
                     "buyer-name",
@@ -1209,15 +1314,19 @@ def query_ted(
                 ],
             )
 
-            country = first_value(
+            # CORREÇÃO PRINCIPAL:
+            # TED pode devolver o país do comprador em
+            # organisation-country-buyer.
+            country = safe_first_text(
                 notice,
                 [
+                    "organisation-country-buyer",
                     "buyer-country",
                     "country",
                 ],
             )
 
-            published = first_value(
+            published = safe_first_text(
                 notice,
                 [
                     "publication-date",
@@ -1225,16 +1334,16 @@ def query_ted(
                 ],
             )
 
-            deadline = first_value(
+            deadline = safe_first_text(
                 notice,
                 [
-                    "deadline-date",
                     "deadline-date-lot",
+                    "deadline-date",
                     "deadlineDate",
                 ],
             )
 
-            publication_number = first_value(
+            publication_number = safe_first_text(
                 notice,
                 [
                     "publication-number",
@@ -1252,6 +1361,12 @@ def query_ted(
                     ],
                 )
             )
+
+            # Só aceitamos resultados dentro dos últimos 365 dias.
+            if not recent_enough(
+                published
+            ):
+                continue
 
             url = ""
 
@@ -1275,11 +1390,6 @@ def query_ted(
             )
 
             if result is None:
-                continue
-
-            if not recent_enough(
-                result.get("date")
-            ):
                 continue
 
             results.append(result)
@@ -1872,7 +1982,11 @@ def automatic_search(
         query
     )
 
-    jobs = []
+    mode = "direct"
+
+    # --------------------------------------------------------
+    # TERMOS
+    # --------------------------------------------------------
 
     if query_norm in {
         "",
@@ -1881,128 +1995,146 @@ def automatic_search(
         "archaeological",
     }:
 
-        mode = "direct"
+        ted_terms = AUTOMATIC_TERMS_TED
 
-        for term in AUTOMATIC_TERMS_TED:
+        world_bank_terms = AUTOMATIC_TERMS_WORLD_BANK
 
-            jobs.append(
-                (
-                    "TED — Europa",
-                    query_ted,
-                    term,
-                    mode,
-                )
-            )
+        secop_terms = AUTOMATIC_TERMS_SECOP
 
-        for term in AUTOMATIC_TERMS_WORLD_BANK:
-
-            jobs.append(
-                (
-                    "World Bank Procurement",
-                    query_world_bank,
-                    term,
-                    mode,
-                )
-            )
-
-        for term in AUTOMATIC_TERMS_SECOP:
-
-            jobs.append(
-                (
-                    "SECOP II — Colômbia",
-                    query_secop,
-                    term,
-                    mode,
-                )
-            )
-
-        for term in [
-            "archaeology",
-            "archaeological",
-            "archaeologist",
-            "arqueologia",
-            "arqueológico",
-        ]:
-
-            jobs.append(
-                (
-                    "PNCP — Brasil",
-                    query_brazil,
-                    term,
-                    mode,
-                )
-            )
+        brazil_terms = AUTOMATIC_TERMS_BRAZIL
 
     else:
 
-        mode = "direct"
+        ted_terms = [query]
 
-        jobs = [
-            (
-                "TED — Europa",
-                query_ted,
-                query,
-                mode,
-            ),
-            (
-                "World Bank Procurement",
-                query_world_bank,
-                query,
-                mode,
-            ),
-            (
-                "SECOP II — Colômbia",
-                query_secop,
-                query,
-                mode,
-            ),
-            (
-                "PNCP — Brasil",
-                query_brazil,
-                query,
-                mode,
-            ),
-        ]
+        world_bank_terms = [query]
+
+        secop_terms = [query]
+
+        brazil_terms = [query]
 
     results = []
 
-    with ThreadPoolExecutor(
-        max_workers=8
-    ) as executor:
+    # --------------------------------------------------------
+    # TED — SEQUENCIAL
+    #
+    # Muito importante:
+    # não lançamos 20+ pedidos TED simultaneamente.
+    # Isso estava a provocar 429.
+    # --------------------------------------------------------
 
-        futures = []
+    for term in ted_terms:
 
-        for (
-            source_name,
-            function,
-            term,
-            mode,
-        ) in jobs:
+        try:
 
-            futures.append(
-                executor.submit(
-                    function,
-                    term,
-                    diagnostics,
-                    mode,
-                )
+            ted_results = query_ted(
+                term,
+                diagnostics,
+                mode,
             )
 
-        for future in as_completed(
-            futures
-        ):
+            results.extend(
+                ted_results
+            )
 
-            try:
-                results.extend(
-                    future.result()
+        except Exception as exc:
+
+            diagnostics.append({
+                "source": "TED — Europa",
+                "term": term,
+                "error": str(exc),
+            })
+
+        # Pequena pausa entre chamadas TED.
+        time.sleep(0.15)
+
+    # --------------------------------------------------------
+    # OUTRAS FONTES
+    #
+    # Estas podem continuar paralelas porque não são
+    # a origem do problema de rate-limit TED.
+    # --------------------------------------------------------
+
+    jobs = []
+
+    for term in world_bank_terms:
+
+        jobs.append(
+            (
+                "World Bank Procurement",
+                query_world_bank,
+                term,
+                mode,
+            )
+        )
+
+    for term in secop_terms:
+
+        jobs.append(
+            (
+                "SECOP II — Colômbia",
+                query_secop,
+                term,
+                mode,
+            )
+        )
+
+    for term in brazil_terms:
+
+        jobs.append(
+            (
+                "PNCP — Brasil",
+                query_brazil,
+                term,
+                mode,
+            )
+        )
+
+    if jobs:
+
+        from concurrent.futures import (
+            ThreadPoolExecutor,
+            as_completed,
+        )
+
+        with ThreadPoolExecutor(
+            max_workers=4
+        ) as executor:
+
+            futures = []
+
+            for (
+                source_name,
+                function,
+                term,
+                mode,
+            ) in jobs:
+
+                futures.append(
+                    executor.submit(
+                        function,
+                        term,
+                        diagnostics,
+                        mode,
+                    )
                 )
 
-            except Exception as exc:
+            for future in as_completed(
+                futures
+            ):
 
-                diagnostics.append({
-                    "source": "automatic",
-                    "error": str(exc),
-                })
+                try:
+
+                    results.extend(
+                        future.result()
+                    )
+
+                except Exception as exc:
+
+                    diagnostics.append({
+                        "source": "automatic",
+                        "error": str(exc),
+                    })
 
     return mode, results
 
@@ -2028,6 +2160,10 @@ def filter_results(
 
     if country_norm:
 
+        requested_code = country_from_text(
+            country
+        )
+
         filtered = [
             item
             for item in filtered
@@ -2040,6 +2176,11 @@ def filter_results(
                     item.get("country_code", "")
                 )
                 == country_norm
+                or (
+                    requested_code
+                    and item.get("country_code")
+                    == requested_code
+                )
             )
         ]
 
@@ -2056,6 +2197,10 @@ def filter_results(
     return filtered
 
 
+# ============================================================
+# DEDUPLICAÇÃO
+# ============================================================
+
 def deduplicate_results(
     results
 ):
@@ -2064,17 +2209,34 @@ def deduplicate_results(
 
     for item in results:
 
-        key = (
-            normalize_for_search(
-                item.get("title", "")
-            ),
-            normalize_for_search(
-                item.get("buyer", "")
-            ),
-            normalize_for_search(
-                item.get("source", "")
-            ),
+        # Primeiro tentamos identificar pelo URL.
+        url = normalize_for_search(
+            item.get("url", "")
         )
+
+        if url:
+            key = (
+                "url",
+                url,
+            )
+
+        else:
+
+            key = (
+                "text",
+                normalize_for_search(
+                    item.get("title", "")
+                ),
+                normalize_for_search(
+                    item.get("buyer", "")
+                ),
+                normalize_for_search(
+                    item.get("country_code", "")
+                ),
+                normalize_for_search(
+                    item.get("source", "")
+                ),
+            )
 
         if key in seen:
             continue
@@ -2083,6 +2245,39 @@ def deduplicate_results(
         output.append(item)
 
     return output
+
+
+# ============================================================
+# ORDENAÇÃO
+# ============================================================
+
+def sort_results(results):
+
+    def sort_key(item):
+
+        score = int(
+            item.get(
+                "score",
+                0,
+            )
+        )
+
+        result_date = item.get(
+            "date",
+            "",
+        )
+
+        return (
+            -score,
+            result_date or "0000-00-00",
+        )
+
+    results.sort(
+        key=sort_key,
+        reverse=True,
+    )
+
+    return results
 
 
 # ============================================================
@@ -2116,13 +2311,15 @@ def manifest():
 def health():
     return {
         "ok": True,
-        "version": "2.5.3",
+        "version": "2.6.0",
         "sources": len(SOURCES),
         "api_sources": sum(
             1
             for source in SOURCES
             if source.get("automatic")
         ),
+        "period_days": PERIOD_DAYS,
+        "ted_page_size": PAGE_SIZE,
     }
 
 
@@ -2168,20 +2365,8 @@ def api_search(
         region=region,
     )
 
-    results.sort(
-        key=lambda item: (
-            -int(
-                item.get(
-                    "score",
-                    0,
-                )
-            ),
-            item.get(
-                "date",
-                "",
-            ),
-        ),
-        reverse=False,
+    results = sort_results(
+        results
     )
 
     source_names = sorted(
