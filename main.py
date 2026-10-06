@@ -2063,10 +2063,11 @@ def automatic_search(
         try:
 
             ted_results = query_ted(
-                term,
-                diagnostics,
-                mode,
-            )
+    term,
+    diagnostics,
+    mode,
+    country_code=country_code,
+)
 
             results.extend(
                 ted_results
