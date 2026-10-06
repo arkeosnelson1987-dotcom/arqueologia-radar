@@ -2525,6 +2525,24 @@ def test_ted_minimal(
 # TESTE TED POR PAÍS — POST
 # ============================================================
 
+@app.get("/api/test-ted-search")
+def test_ted_search(term: str = "archaeology"):
+    diagnostics = []
+
+    results = query_ted(
+        term,
+        diagnostics=diagnostics,
+        search_mode="direct",
+    )
+
+    return {
+        "ok": True,
+        "term": term,
+        "count": len(results),
+        "results": results[:10],
+        "diagnostics": diagnostics,
+    }
+
 @app.get("/api/test-ted-country")
 def test_ted_country(
     term: str = Query(
