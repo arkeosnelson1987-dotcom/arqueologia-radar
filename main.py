@@ -2387,9 +2387,10 @@ def api_search(
     diagnostics = []
 
     mode, results = automatic_search(
-        q,
-        diagnostics,
-    )
+    q,
+    diagnostics,
+    country_code=COUNTRY_MAP.get(country),
+)
 
     results = deduplicate_results(
         results
