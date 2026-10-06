@@ -1179,10 +1179,12 @@ def build_ted_query(term):
     term = normalize_text(term)
 
     return f'FT~"{term}"'
+
 def query_ted(
     term,
     diagnostics=None,
     search_mode="direct",
+    country_code=None,
 ):
     if diagnostics is None:
         diagnostics = []
@@ -1190,9 +1192,6 @@ def query_ted(
     # --------------------------------------------------------
     # PERÍODO
     # --------------------------------------------------------
-    # O TED recebe diretamente o intervalo de publicação.
-    # Assim evitamos pedir resultados antigos e depois
-    # simplesmente eliminá-los localmente.
     today = date.today()
     start_date = today - timedelta(days=PERIOD_DAYS)
 
@@ -1202,25 +1201,28 @@ def query_ted(
     # --------------------------------------------------------
     # QUERY TED
     # --------------------------------------------------------
-    # Mantemos a pesquisa por texto.
-    #
-    # O filtro temporal é enviado diretamente ao TED.
-    #
-    # Não acrescentamos ainda país ou CPV aqui porque,
-    # nesta fase, automatic_search() não os envia para
-    # query_ted(). Isso será tratado num passo posterior.
+    query_parts = [
+        f'FT~"{normalize_text(term)}"',
+        f"publication-date>={start_ted}",
+        f"publication-date<={end_ted}",
+    ]
+
     # --------------------------------------------------------
+    # PAÍS — OPCIONAL
+    # --------------------------------------------------------
+    if country_code:
+        country_code = str(
+            country_code
+        ).strip().upper()
 
-    query = (
-        f'FT~"{normalize_text(term)}" '
-        f'AND publication-date>= {start_ted} '
-        f'AND publication-date<= {end_ted}'
-    )
+        if country_code:
+            query_parts.append(
+                f"buyer-country={country_code}"
+            )
+    else:
+        country_code = ""
 
-    # Remover o espaço depois dos operadores para manter
-    # a sintaxe TED mais limpa.
-    query = query.replace(">= ", ">=")
-    query = query.replace("<= ", "<=")
+    query = " AND ".join(query_parts)
 
     payload = {
         "query": query,
@@ -1230,7 +1232,6 @@ def query_ted(
         "paginationMode": "PAGE_NUMBER",
     }
 
-    # Pequena pausa para evitar rajadas contra a API TED.
     time.sleep(0.20)
 
     try:
@@ -1253,11 +1254,8 @@ def query_ted(
             "query": query,
             "period_start": start_date.isoformat(),
             "period_end": today.isoformat(),
+            "country_code": country_code,
         })
-
-        # ----------------------------------------------------
-        # RATE LIMIT
-        # ----------------------------------------------------
 
         if response.status_code == 429:
 
@@ -1291,10 +1289,6 @@ def query_ted(
 
                 return []
 
-        # ----------------------------------------------------
-        # ERRO HTTP
-        # ----------------------------------------------------
-
         if response.status_code != 200:
 
             diagnostics[-1]["error"] = (
@@ -1302,10 +1296,6 @@ def query_ted(
             )
 
             return []
-
-        # ----------------------------------------------------
-        # JSON
-        # ----------------------------------------------------
 
         data = response.json()
 
@@ -1323,10 +1313,6 @@ def query_ted(
             )
 
         results = []
-
-        # ----------------------------------------------------
-        # PROCESSAMENTO
-        # ----------------------------------------------------
 
         for notice in notices:
 
@@ -1364,8 +1350,6 @@ def query_ted(
                 ],
             )
 
-            # TED pode devolver o país do comprador em
-            # organisation-country-buyer.
             country = safe_first_text(
                 notice,
                 [
@@ -1410,16 +1394,6 @@ def query_ted(
                     ],
                 )
             )
-
-            # ------------------------------------------------
-            # SEGURANÇA
-            # ------------------------------------------------
-            # O TED já recebeu o filtro temporal.
-            #
-            # Mantemos esta verificação local como proteção
-            # adicional caso a API devolva algum registo
-            # fora do intervalo.
-            # ------------------------------------------------
 
             if not recent_enough(
                 published
