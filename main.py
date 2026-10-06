@@ -2519,7 +2519,30 @@ def test_ted_minimal(
             "query": query,
             "error": str(exc),
         }
+        
+@app.get("/api/test-ted-portugal")
+def test_ted_portugal(term: str = "archaeology"):
+    diagnostics = []
 
+    results = query_ted(
+        term,
+        diagnostics=diagnostics,
+        search_mode="direct",
+    )
+
+    portugal_results = [
+        r for r in results
+        if r.get("country_code") == "PT"
+    ]
+
+    return {
+        "ok": True,
+        "term": term,
+        "count_total": len(results),
+        "count_portugal": len(portugal_results),
+        "results_portugal": portugal_results[:10],
+        "diagnostics": diagnostics,
+    }
 
 # ============================================================
 # TESTE TED POR PAÍS — POST
