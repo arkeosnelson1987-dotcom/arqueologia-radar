@@ -2011,6 +2011,7 @@ def query_brazil(
 def automatic_search(
     query,
     diagnostics,
+    country_code=None,
 ):
     query_norm = normalize_for_search(
         query
