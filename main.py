@@ -1179,8 +1179,6 @@ def build_ted_query(term):
     term = normalize_text(term)
 
     return f'FT~"{term}"'
-
-
 def query_ted(
     term,
     diagnostics=None,
@@ -1189,7 +1187,40 @@ def query_ted(
     if diagnostics is None:
         diagnostics = []
 
-    query = build_ted_query(term)
+    # --------------------------------------------------------
+    # PERÍODO
+    # --------------------------------------------------------
+    # O TED recebe diretamente o intervalo de publicação.
+    # Assim evitamos pedir resultados antigos e depois
+    # simplesmente eliminá-los localmente.
+    today = date.today()
+    start_date = today - timedelta(days=PERIOD_DAYS)
+
+    start_ted = start_date.strftime("%Y%m%d")
+    end_ted = today.strftime("%Y%m%d")
+
+    # --------------------------------------------------------
+    # QUERY TED
+    # --------------------------------------------------------
+    # Mantemos a pesquisa por texto.
+    #
+    # O filtro temporal é enviado diretamente ao TED.
+    #
+    # Não acrescentamos ainda país ou CPV aqui porque,
+    # nesta fase, automatic_search() não os envia para
+    # query_ted(). Isso será tratado num passo posterior.
+    # --------------------------------------------------------
+
+    query = (
+        f'FT~"{normalize_text(term)}" '
+        f'AND publication-date>= {start_ted} '
+        f'AND publication-date<= {end_ted}'
+    )
+
+    # Remover o espaço depois dos operadores para manter
+    # a sintaxe TED mais limpa.
+    query = query.replace(">= ", ">=")
+    query = query.replace("<= ", "<=")
 
     payload = {
         "query": query,
@@ -1219,9 +1250,15 @@ def query_ted(
             "term": term,
             "method": "POST",
             "status_code": response.status_code,
+            "query": query,
+            "period_start": start_date.isoformat(),
+            "period_end": today.isoformat(),
         })
 
-        # Se houver rate limit, não insistimos imediatamente.
+        # ----------------------------------------------------
+        # RATE LIMIT
+        # ----------------------------------------------------
+
         if response.status_code == 429:
 
             diagnostics[-1]["error"] = (
@@ -1231,6 +1268,7 @@ def query_ted(
             time.sleep(2)
 
             try:
+
                 response = requests.post(
                     TED_URL,
                     json=payload,
@@ -1253,6 +1291,10 @@ def query_ted(
 
                 return []
 
+        # ----------------------------------------------------
+        # ERRO HTTP
+        # ----------------------------------------------------
+
         if response.status_code != 200:
 
             diagnostics[-1]["error"] = (
@@ -1260,6 +1302,10 @@ def query_ted(
             )
 
             return []
+
+        # ----------------------------------------------------
+        # JSON
+        # ----------------------------------------------------
 
         data = response.json()
 
@@ -1277,6 +1323,10 @@ def query_ted(
             )
 
         results = []
+
+        # ----------------------------------------------------
+        # PROCESSAMENTO
+        # ----------------------------------------------------
 
         for notice in notices:
 
@@ -1314,7 +1364,6 @@ def query_ted(
                 ],
             )
 
-            # CORREÇÃO PRINCIPAL:
             # TED pode devolver o país do comprador em
             # organisation-country-buyer.
             country = safe_first_text(
@@ -1362,7 +1411,16 @@ def query_ted(
                 )
             )
 
-            # Só aceitamos resultados dentro dos últimos 365 dias.
+            # ------------------------------------------------
+            # SEGURANÇA
+            # ------------------------------------------------
+            # O TED já recebeu o filtro temporal.
+            #
+            # Mantemos esta verificação local como proteção
+            # adicional caso a API devolva algum registo
+            # fora do intervalo.
+            # ------------------------------------------------
+
             if not recent_enough(
                 published
             ):
@@ -1371,6 +1429,7 @@ def query_ted(
             url = ""
 
             if publication_number:
+
                 url = (
                     "https://ted.europa.eu/en/notice/"
                     + str(publication_number)
@@ -1402,6 +1461,7 @@ def query_ted(
             "source": "TED — Europa",
             "term": term,
             "method": "POST",
+            "query": query,
             "error": str(exc),
         })
 
