@@ -2497,11 +2497,11 @@ def test_ted_minimal(
 @app.get("/api/test-ted-portugal")
 def test_ted_portugal(term: str = "archaeology"):
     diagnostics = []
-
     results = query_ted(
         term,
         diagnostics=diagnostics,
         search_mode="direct",
+        country_code="PRT",
     )
 
     portugal_results = [
