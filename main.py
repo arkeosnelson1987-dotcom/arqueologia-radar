@@ -479,17 +479,68 @@ def api_sources():
             "automatic":sum(1 for s in SOURCES if s.get("automatic"))}
 
 @app.get("/api/search")
-def api_search(q:str=Query(default="archaeology"),country:str=Query(default=""),region:str=Query(default="")):
-    diagnostics=[]
-    # Corrige o erro anterior: Portugal -> PRT, Marrocos -> MAR, etc.
-    iso3=country_iso3_from_text(country)
-    mode,results=automatic_search(q,diagnostics,iso3 or None)
-    results=sort_results(filter_results(deduplicate_results(results),country,region))
-    source_names=sorted(set(x.get("source","") for x in results if x.get("source")))
-    regions=sorted(set(x.get("region","") for x in results if x.get("region")))
-    return {"ok":True,"query":q,"mode":mode,"results":results,"count":len(results),
-            "sources":source_names,"source_count":len(source_names),"regions":regions,
-            "diagnostics":diagnostics}
+def api_search(
+    q: str = Query(default="archaeology"),
+    country: str = Query(default=""),
+    region: str = Query(default="")
+):
+    diagnostics = []
+
+    try:
+        iso3 = country_iso3_from_text(country)
+
+        mode, results = automatic_search(
+            q,
+            diagnostics,
+            iso3 or None
+        )
+
+        results = deduplicate_results(results)
+
+        results = filter_results(
+            results,
+            country,
+            region
+        )
+
+        results = sort_results(results)
+
+        source_names = sorted(
+            set(
+                x.get("source", "")
+                for x in results
+                if x.get("source")
+            )
+        )
+
+        regions = sorted(
+            set(
+                x.get("region", "")
+                for x in results
+                if x.get("region")
+            )
+        )
+
+        return {
+            "ok": True,
+            "query": q,
+            "mode": mode,
+            "results": results,
+            "count": len(results),
+            "sources": source_names,
+            "source_count": len(source_names),
+            "regions": regions,
+            "diagnostics": diagnostics
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "error_type": type(exc).__name__,
+            "query": q,
+            "diagnostics": diagnostics
+        }
 
 @app.get("/api/test-ted-minimal")
 def test_ted_minimal(term:str=Query(default="archaeology")):
