@@ -440,6 +440,23 @@ def automatic_search(query,diagnostics,country_code=None):
                     "source": "automatic",
                     "error": str(exc)
                 })
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [
+            executor.submit(fn, t, diagnostics, job_mode)
+            for fn, t, job_mode in jobs
+        ]
+        for f in as_completed(futures):
+            try:
+                results.extend(f.result())
+            except Exception as exc:
+                diagnostics.append({
+                    "source": "automatic",
+                    "error": str(exc)
+                })
+
+    return mode, results
+
+
 
 def filter_results(results,country="",region=""):
     code=country_from_text(country); cn=normalize_for_search(country); rn=normalize_for_search(region)
