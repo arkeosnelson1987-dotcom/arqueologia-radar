@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.0")
+app = FastAPI(title="Arqueologia Radar", version="2.8.1")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -140,7 +140,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.0", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.1", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -391,7 +391,7 @@ def query_ted(term, diagnostics=None, search_mode="direct", country_code=None):
             response = _ted_post(query)
             diagnostic["retry_status_code"] = response.status_code
         if response.status_code != 200:
-            diagnostic["error"] = response.text[:500]
+            diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:500]}"
             diagnostics.append(diagnostic)
             return []
         payload = response.json()
@@ -436,7 +436,7 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
                                timeout=REQUEST_TIMEOUT)
         diagnostic["status_code"] = response.status_code
         if response.status_code != 200:
-            diagnostic["error"] = response.text[:300]
+            diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
             diagnostics.append(diagnostic)
             return []
         payload = response.json()
@@ -475,7 +475,7 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
         response = SESSION.get(SECOP_URL, params={"$limit": 1000, "$q": term}, timeout=REQUEST_TIMEOUT)
         diagnostic["status_code"] = response.status_code
         if response.status_code != 200:
-            diagnostic["error"] = response.text[:300]
+            diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
             diagnostics.append(diagnostic)
             return []
         payload = response.json()
@@ -531,13 +531,13 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 "dataFinal": date.today().strftime("%Y%m%d"),
                 "codigoModalidadeContratacao": modality,
                 "pagina": 1,
-                "tamanhoPagina": 100,
+                "tamanhoPagina": 10,
             }
             response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
                                   timeout=REQUEST_TIMEOUT)
             diagnostic["status_code"] = response.status_code
             if response.status_code != 200:
-                diagnostic["error"] = response.text[:250]
+                diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
                 diagnostics.append(diagnostic)
                 continue
             payload = response.json()
@@ -600,7 +600,7 @@ def automatic_search(query, diagnostics, country_code=None):
     jobs = [(query_world_bank, term, mode) for term in wb_terms]
     jobs += [(query_secop, term, mode) for term in secop_terms]
     jobs += [(query_brazil, brazil_term, mode)]
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(fn, term, diagnostics, job_mode) for fn, term, job_mode in jobs]
         for future in as_completed(futures):
             try:
@@ -664,7 +664,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.0", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.1", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -688,11 +688,20 @@ def api_search(q: str = Query(default="archaeology"),
         results = sort_results(results)
         source_names = sorted({item.get("source", "") for item in results if item.get("source")})
         regions = sorted({item.get("region", "") for item in results if item.get("region")})
-        return {"ok": True, "version": "2.8.0", "query": q, "mode": mode,
+        automatic_source_names = {"TED — Europa", "World Bank Procurement", "SECOP II — Colômbia", "PNCP — Brasil"}
+        successful_diagnostics = [d for d in diagnostics if d.get("status_code") == 200]
+        failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
+        consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
+        failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
+        return {"ok": True, "version": "2.8.1", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
-                "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics}
+                "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
+                "automatic_sources_consulted": consulted_automatic_sources,
+                "automatic_sources_count": len(consulted_automatic_sources),
+                "automatic_sources_failed": failed_automatic_sources,
+                "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.0", "error": str(exc),
+        return {"ok": False, "version": "2.8.1", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
