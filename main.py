@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.2")
+app = FastAPI(title="Arqueologia Radar", version="2.8.3")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -84,12 +84,12 @@ MAJOR_PROJECT_TERMS = [
 ]
 ARCHAEOLOGY_CPVS = {"71351914", "71351910", "71351900", "71351720", "71351811", "71351730"}
 FAST_TED_TERMS = ["archaeology", "archaeological", "cultural heritage", "arqueologia"]
-WORLD_BANK_TERMS = ["archaeology", "archaeological", "cultural heritage", "heritage"]
-SECOP_TERMS = ["archaeology", "archaeological", "arqueologia", "heritage"]
+WORLD_BANK_TERMS = ["archaeology", "cultural heritage"]
+SECOP_TERMS = ["archaeology", "archaeological", "arqueologia", "arqueología", "servicios arqueologicos", "patrimonio cultural", "heritage"]
 BRAZIL_TERMS = ["arqueologia", "arqueológico", "arqueológica", "arqueológicos", "arqueológicas", "serviços arqueológicos", "serviços de arqueologia", "patrimônio", "património", "patrimônio cultural", "patrimônio histórico", "património cultural", "património histórico"]
 # PNCP exige o código de modalidade na consulta por publicação. Códigos válidos
 # mais comuns; a consulta é executada uma vez por modalidade e os resultados são filtrados localmente.
-PNCP_MODALITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 99, 100]
+PNCP_MODALITIES = [1, 2, 3, 6]
 
 COUNTRY_MAP = {
 "PT":"Portugal","ES":"Espanha","FR":"França","DE":"Alemanha","IT":"Itália","NL":"Países Baixos",
@@ -176,22 +176,35 @@ def normalize_for_search(value):
 def repair_mojibake(value):
     text = normalize_text(value)
     markers = ("Ã", "Â", "â€", "â€“", "â€”", "\x80", "\x8d")
-    if not any(marker in text for marker in markers):
-        return text
-    for encoding in ("latin-1", "cp1252"):
-        try:
-            fixed = text.encode(encoding).decode("utf-8")
-            old_count = sum(text.count(marker) for marker in ("Ã", "Â", "â€", "â€“", "â€”"))
-            new_count = sum(fixed.count(marker) for marker in ("Ã", "Â", "â€", "â€“", "â€”"))
-            if fixed != text and new_count < old_count:
-                return fixed
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            pass
-    replacements = {"Ã¡":"á", "Ã©":"é", "Ã­":"í", "Ã³":"ó", "Ãº":"ú", "Ã£":"ã",
-                    "Ãµ":"õ", "Ã§":"ç", "Ã€":"À", "Ã‰":"É", "Ã‡":"Ç", "â€“":"–",
-                    "â€”":"—", "â€œ":"“", "â€":"”", "â€˜":"‘", "â€™":"’", "Â":""}
-    for old, new in replacements.items():
-        text = text.replace(old, new)
+    # Some upstream feeds have been decoded twice; attempt a maximum of two safe reversals.
+    for _ in range(2):
+        if not any(marker in text for marker in markers):
+            break
+        repaired = None
+        for encoding in ("cp1252", "latin-1"):
+            try:
+                candidate = text.encode(encoding).decode("utf-8")
+                old_count = sum(text.count(marker) for marker in markers)
+                new_count = sum(candidate.count(marker) for marker in markers)
+                if candidate != text and new_count < old_count:
+                    repaired = candidate
+                    break
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+        if repaired is None:
+            replacements = {
+                "Ã¡":"á", "Ã©":"é", "Ã­":"í", "Ã³":"ó", "Ãº":"ú", "Ã£":"ã",
+                "Ãµ":"õ", "Ã§":"ç", "Ã‰":"É", "Ã":"Í", "Ã“":"Ó", "Ãš":"Ú",
+                "Ã€":"À", "Ã‡":"Ç", "Ã":"Á", "â€“":"–", "â€”":"—",
+                "â€œ":"“", "â€":"”", "â€˜":"‘", "â€™":"’", "Â":""
+            }
+            candidate = text
+            for old, replacement in replacements.items():
+                candidate = candidate.replace(old, replacement)
+            if candidate == text:
+                break
+            repaired = candidate
+        text = repaired
     return text
 
 
@@ -320,11 +333,11 @@ def classify_result(title, description, cpvs, search_mode="direct"):
     heritage = has_any_term(combined, HERITAGE_TERMS)
     major = has_any_term(combined, MAJOR_PROJECT_TERMS)
 
-    # Prioridade à arqueologia expressa no título ou no CPV. Uma menção isolada
-    # na descrição é mantida com pontuação inferior, para não a confundir com um serviço principal.
-    if title_direct or cpv_direct:
+    # A arqueologia no título é o sinal mais forte. Um CPV isolado pode aparecer
+    # em contratos de engenharia mais amplos e não deve, por si só, ser classificado como direto.
+    if title_direct:
         return "Arqueologia direta"
-    if description_direct:
+    if description_direct or cpv_direct:
         return "Serviço com componente arqueológica"
     if search_mode != "direct" and heritage and major:
         return "Património / grandes projetos"
@@ -433,7 +446,7 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
     diagnostic = {"source": "World Bank Procurement", "term": term, "method": "GET"}
     try:
         response = SESSION.get(WORLD_BANK_URL, params={"qterm": term, "rows": 100, "format": "json"},
-                               timeout=REQUEST_TIMEOUT)
+                               timeout=(5, 12))
         diagnostic["status_code"] = response.status_code
         if response.status_code != 200:
             diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
@@ -484,18 +497,21 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
             return []
         output = []
         normalized_term = normalize_for_search(term)
+        secop_relevance_terms = [normalize_for_search(t) for t in SECOP_TERMS + ["servicios arqueologicos", "patrimonio cultural"]]
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            title = first_value(item, ["descripcion_del_proceso", "nombre_del_procedimiento", "titulo", "description"])
-            description = first_value(item, ["descripcion", "description", "objeto"])
+            title = first_value(item, ["nombre_del_procedimiento", "descripcion_del_proceso", "descripci_n_del_procedimiento", "nombre_del_proceso", "titulo", "description"])
+            description = first_value(item, ["descripci_n_del_procedimiento", "descripcion_del_proceso", "descripcion", "description", "objeto", "objeto_del_contrato"])
+            if not title and description:
+                title = description
             combined = normalize_for_search(f"{title or ''} {description or ''}")
-            if normalized_term not in combined:
+            if normalized_term not in combined and not any(t in combined for t in secop_relevance_terms):
                 continue
-            buyer = first_value(item, ["nombre_entidad", "entidad", "buyer"])
-            published = first_value(item, ["fecha_de_publicacion", "fecha_publicacion", "fecha_de_ultima_publicacion"])
-            deadline = first_value(item, ["fecha_de_recepcion_de_respuestas", "fecha_de_cierre", "fecha_cierre"])
-            url = first_value(item, ["urlproceso", "url"])
+            buyer = first_value(item, ["nombre_entidad", "entidad", "buyer", "nombre_de_la_entidad"])
+            published = first_value(item, ["fecha_de_publicacion", "fecha_publicacion", "fecha_de_ultima_publicacion", "fecha_de_publicacion_del_proceso"])
+            deadline = first_value(item, ["fecha_de_recepcion_de_respuestas", "fecha_de_cierre", "fecha_cierre", "fecha_de_fin"])
+            url = first_value(item, ["urlproceso", "url", "url_del_proceso"])
             cpvs = cpv_values(first_value(item, ["codigo_principal_de_categoria", "codigo_unspsc", "cpv"]))
             result = make_result(title, description, buyer, "CO", "SECOP II — Colômbia",
                                  url, published, deadline, cpvs, search_mode)
@@ -609,7 +625,7 @@ def automatic_search(query, diagnostics, country_code=None):
     jobs = [(query_world_bank, term, mode) for term in wb_terms]
     jobs += [(query_secop, term, mode) for term in secop_terms]
     jobs += [(query_brazil, brazil_term, mode)]
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [executor.submit(fn, term, diagnostics, job_mode) for fn, term, job_mode in jobs]
         for future in as_completed(futures):
             try:
@@ -673,7 +689,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.2", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.3", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -702,7 +718,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.2", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.3", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -710,7 +726,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.2", "error": str(exc),
+        return {"ok": False, "version": "2.8.3", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
