@@ -10,9 +10,9 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.5")
+app = FastAPI(title="Arqueologia Radar", version="2.8.6")
 
-REQUEST_TIMEOUT = 20
+REQUEST_TIMEOUT = 15
 PERIOD_DAYS = 365
 PAGE_SIZE = 250
 
@@ -140,7 +140,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.5", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.6", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -174,33 +174,64 @@ def normalize_for_search(value):
 
 
 def repair_mojibake(value):
-    """Corrige texto UTF-8 mal descodificado, incluindo sequências C1 de TED."""
+    """Corrige texto UTF-8 interpretado como Latin-1/Windows-1252, sem reescrever texto válido."""
     text = normalize_text(value)
-    markers = ("Ã", "Â", "â€", "â€“", "â€”", "ðŸ")
-    # Tenta reverter uma ou duas descodificações erradas, escolhendo a versão
-    # que reduz os marcadores típicos de corrupção de caracteres.
+    if not text:
+        return text
+
+    markers = ("Ã", "Â", "â€", "ðŸ", "Ãƒ", "Ã‚")
+
+    def score(candidate):
+        # Penaliza sequências típicas de mojibake e controlos C1 que surgem em texto corrompido.
+        return sum(candidate.count(marker) * 3 for marker in markers) + sum(
+            1 for char in candidate if 0x80 <= ord(char) <= 0x9F
+        )
+
+    # Converte sequências de caracteres Latin-1/Windows-1252 em blocos, para que
+    # um apóstrofo tipográfico ou outro carácter fora do Latin-1 não impeça a reparação.
     for _ in range(3):
-        old_score = sum(text.count(marker) for marker in markers)
+        old_score = score(text)
         candidates = []
         for encoding in ("cp1252", "latin-1"):
-            try:
-                candidate = text.encode(encoding).decode("utf-8")
-            except (UnicodeEncodeError, UnicodeDecodeError):
-                continue
-            new_score = sum(candidate.count(marker) for marker in markers)
-            if candidate != text and new_score < old_score:
-                candidates.append((new_score, candidate))
-        if candidates:
-            text = min(candidates, key=lambda item: item[0])[1]
-        else:
+            pieces = []
+            run = []
+            for char in text:
+                try:
+                    char.encode(encoding)
+                    run.append(char)
+                except UnicodeEncodeError:
+                    if run:
+                        chunk = "".join(run)
+                        try:
+                            pieces.append(chunk.encode(encoding).decode("utf-8"))
+                        except UnicodeError:
+                            pieces.append(chunk)
+                        run = []
+                    pieces.append(char)
+            if run:
+                chunk = "".join(run)
+                try:
+                    pieces.append(chunk.encode(encoding).decode("utf-8"))
+                except UnicodeError:
+                    pieces.append(chunk)
+            candidate = "".join(pieces)
+            if candidate != text and score(candidate) < old_score:
+                candidates.append((score(candidate), candidate))
+        if not candidates:
             break
+        text = min(candidates, key=lambda item: item[0])[1]
+
+    # Casos frequentes que incluem bytes de controlo C1 e não são recuperados por cp1252.
     replacements = {
-        "Ã¡":"á", "Ã ":"à", "Ã¢":"â", "Ã£":"ã", "Ã¤":"ä", "Ã©":"é",
-        "Ã¨":"è", "Ãª":"ê", "Ã­":"í", "Ã¬":"ì", "Ã³":"ó", "Ã²":"ò",
-        "Ã´":"ô", "Ãµ":"õ", "Ãº":"ú", "Ã¹":"ù", "Ã§":"ç", "Ã‰":"É",
-        "Ã€":"À", "Ã‚":"Â", "Ãƒ":"Ã", "Ã‡":"Ç", "Ã":"Í", "Ã“":"Ó",
-        "Ãš":"Ú", "Ã":"Á", "Ã•":"Õ", "Ã¡":"á", "Ã\u008d":"Í", "â€“":"–", "â€”":"—", "â€œ":"“", "â€":"”", "â€˜":"‘", "â€™":"’",
-        "Â":""
+        "Ã": "Í", "Ã": "Í", "Ã": "Ó", "Ã": "Ú",
+        "Ã": "Á", "Ã": "É", "Ã": "Í", "Ã": "Ó",
+        "Ã¡": "á", "Ã ": "à", "Ã¢": "â", "Ã£": "ã", "Ã¤": "ä",
+        "Ã©": "é", "Ã¨": "è", "Ãª": "ê", "Ã­": "í", "Ã¬": "ì",
+        "Ã³": "ó", "Ã²": "ò", "Ã´": "ô", "Ãµ": "õ", "Ãº": "ú",
+        "Ã¹": "ù", "Ã§": "ç", "Ã‰": "É", "Ã€": "À", "Ã‚": "Â",
+        "Ãƒ": "Ã", "Ã‡": "Ç", "Ã“": "Ó", "Ãš": "Ú", "Ã": "Á",
+        "Ã•": "Õ", "â€“": "–", "â€”": "—", "â€œ": "“", "â€": "”",
+        "â€˜": "‘", "â€™": "’", "Â ": " ",
     }
     for old, replacement in replacements.items():
         text = text.replace(old, replacement)
@@ -373,7 +404,7 @@ def make_result(title, description, buyer, country, source, url, published, dead
         "title": title, "description": description, "buyer": buyer,
         "country": country_name(code) if code else country_text,
         "country_code": code, "region": region_from_country(code),
-        "source": source, "url": normalize_text(url),
+        "source": repair_mojibake(source), "url": repair_mojibake(url),
         "date": published_date.isoformat() if published_date else "",
         "deadline": deadline_date.isoformat() if deadline_date else "",
         "cpv": cpvs, "classification": classification, "score": score,
@@ -463,9 +494,16 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
             diagnostics.append(diagnostic)
             return []
         payload = response.json()
-        notices = payload.get("procurements") or payload.get("notices") or payload.get("results") or []
+        notices = (payload.get("procurements") or payload.get("procnotices") or
+                   payload.get("notices") or payload.get("results") or payload.get("data") or [])
+        if isinstance(notices, dict):
+            notices = (notices.get("procnotice") or notices.get("procurement") or
+                       notices.get("notice") or notices.get("results") or list(notices.values()))
         if isinstance(notices, dict):
             notices = list(notices.values())
+        if not isinstance(notices, list):
+            notices = []
+        diagnostic["response_keys"] = list(payload.keys()) if isinstance(payload, dict) else []
         output = []
         for item in notices:
             if not isinstance(item, dict):
@@ -585,29 +623,27 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 "tamanhoPagina": 50,
             }
             items = []
-            for page in range(1, 6):
-                params["pagina"] = page
-                response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
-                                      timeout=REQUEST_TIMEOUT)
-                diagnostic["status_code"] = response.status_code
-                if response.status_code != 200:
-                    diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
-                    # Não insistir quando o PNCP limita os pedidos.
-                    if response.status_code == 429:
-                        break
-                    continue
-                payload = response.json()
-                page_items = payload.get("data", []) if isinstance(payload, dict) else payload
-                if not isinstance(page_items, list):
-                    diagnostic["error"] = "Formato de resposta inesperado"
-                    break
-                items.extend(page_items)
-                if len(page_items) < 50:
-                    break
-            if diagnostic.get("status_code") != 200:
+            # Só uma página por modalidade nesta pesquisa: reduz a pressão sobre a API.
+            # A pesquisa seguinte poderá recolher mais avisos sem provocar rajadas de pedidos.
+            params["pagina"] = 1
+            response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
+                                   timeout=(5, 12))
+            diagnostic["status_code"] = response.status_code
+            if response.status_code != 200:
+                diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
                 diagnostics.append(diagnostic)
-                if diagnostic.get("status_code") == 429:
+                # Em HTTP 429 não se tenta outra modalidade na mesma pesquisa.
+                if response.status_code == 429:
                     break
+                continue
+            payload = response.json()
+            page_items = payload.get("data", []) if isinstance(payload, dict) else payload
+            if not isinstance(page_items, list):
+                diagnostic["error"] = "Formato de resposta inesperado"
+                diagnostics.append(diagnostic)
+                continue
+            items.extend(page_items)
+            if diagnostic.get("status_code") != 200:
                 continue
             accepted = 0
             for item in items:
@@ -635,7 +671,7 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                     output.append(result)
                     accepted += 1
             diagnostic["returned_items"] = len(items)
-            diagnostic["pages_checked"] = (len(items) + 49) // 50
+            diagnostic["pages_checked"] = 1
             diagnostic["accepted_results"] = accepted
             diagnostics.append(diagnostic)
         except Exception as exc:
@@ -649,8 +685,9 @@ def automatic_search(query, diagnostics, country_code=None):
     broad_search = normalized_query in {"", "arqueologia", "archaeology", "archaeological"}
     if broad_search:
         ted_terms = FAST_TED_TERMS
-        wb_terms = WORLD_BANK_TERMS
-        secop_terms = SECOP_TERMS
+        # Menos consultas repetidas por pesquisa geral; mantém diversidade linguística.
+        wb_terms = ["archaeology"]
+        secop_terms = ["archaeology", "arqueologia", "servicios arqueologicos"]
         brazil_term = "archaeology"  # query_brazil expande para os termos brasileiros
     else:
         ted_terms = [query]
@@ -731,7 +768,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.5", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.6", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -760,7 +797,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.5", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.6", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -768,7 +805,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.5", "error": str(exc),
+        return {"ok": False, "version": "2.8.6", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
