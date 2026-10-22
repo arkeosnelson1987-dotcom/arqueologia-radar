@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.4")
+app = FastAPI(title="Arqueologia Radar", version="2.8.5")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -140,7 +140,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.4", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.5", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -174,41 +174,36 @@ def normalize_for_search(value):
 
 
 def repair_mojibake(value):
-    """Corrige texto UTF-8 interpretado incorretamente, sem alterar texto normal."""
+    """Corrige texto UTF-8 mal descodificado, incluindo sequências C1 de TED."""
     text = normalize_text(value)
     markers = ("Ã", "Â", "â€", "â€“", "â€”", "ðŸ")
+    # Tenta reverter uma ou duas descodificações erradas, escolhendo a versão
+    # que reduz os marcadores típicos de corrupção de caracteres.
     for _ in range(3):
-        if not any(marker in text for marker in markers):
-            break
+        old_score = sum(text.count(marker) for marker in markers)
         candidates = []
         for encoding in ("cp1252", "latin-1"):
             try:
                 candidate = text.encode(encoding).decode("utf-8")
             except (UnicodeEncodeError, UnicodeDecodeError):
                 continue
-            if candidate != text:
-                old_score = sum(text.count(marker) for marker in markers)
-                new_score = sum(candidate.count(marker) for marker in markers)
-                if new_score < old_score:
-                    candidates.append((new_score, candidate))
+            new_score = sum(candidate.count(marker) for marker in markers)
+            if candidate != text and new_score < old_score:
+                candidates.append((new_score, candidate))
         if candidates:
             text = min(candidates, key=lambda item: item[0])[1]
-            continue
-        replacements = {
-            "Ã¡":"á", "Ã ":"à", "Ã¢":"â", "Ã£":"ã", "Ã¤":"ä",
-            "Ã©":"é", "Ã¨":"è", "Ãª":"ê", "Ã­":"í", "Ã¬":"ì",
-            "Ã³":"ó", "Ã²":"ò", "Ã´":"ô", "Ãµ":"õ", "Ãº":"ú",
-            "Ã¹":"ù", "Ã§":"ç", "Ã‰":"É", "Ã€":"À", "Ã‚":"Â",
-            "Ãƒ":"Ã", "Ã‡":"Ç", "Ã":"Í", "Ã“":"Ó", "Ãš":"Ú",
-            "Ã":"Á", "Ã•":"Õ", "â€“":"–", "â€”":"—", "â€œ":"“",
-            "â€":"”", "â€˜":"‘", "â€™":"’", "Â":""
-        }
-        candidate = text
-        for old, replacement in replacements.items():
-            candidate = candidate.replace(old, replacement)
-        if candidate == text:
+        else:
             break
-        text = candidate
+    replacements = {
+        "Ã¡":"á", "Ã ":"à", "Ã¢":"â", "Ã£":"ã", "Ã¤":"ä", "Ã©":"é",
+        "Ã¨":"è", "Ãª":"ê", "Ã­":"í", "Ã¬":"ì", "Ã³":"ó", "Ã²":"ò",
+        "Ã´":"ô", "Ãµ":"õ", "Ãº":"ú", "Ã¹":"ù", "Ã§":"ç", "Ã‰":"É",
+        "Ã€":"À", "Ã‚":"Â", "Ãƒ":"Ã", "Ã‡":"Ç", "Ã":"Í", "Ã“":"Ó",
+        "Ãš":"Ú", "Ã":"Á", "Ã•":"Õ", "Ã¡":"á", "Ã\u008d":"Í", "â€“":"–", "â€”":"—", "â€œ":"“", "â€":"”", "â€˜":"‘", "â€™":"’",
+        "Â":""
+    }
+    for old, replacement in replacements.items():
+        text = text.replace(old, replacement)
     return text
 
 
@@ -589,27 +584,30 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 "pagina": 1,
                 "tamanhoPagina": 50,
             }
-            response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
-                                  timeout=REQUEST_TIMEOUT)
-            diagnostic["status_code"] = response.status_code
-            if response.status_code != 200:
-                diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
-                diagnostics.append(diagnostic)
-                # O PNCP aplica limitação temporária (HTTP 429). Não insistir
-                # nas restantes modalidades na mesma pesquisa: evita agravar o bloqueio.
-                if response.status_code == 429:
-                    diagnostics.append({
-                        "source": "PNCP — Brasil", "term": term, "method": "GET",
-                        "status": "interrompido",
-                        "reason": "HTTP 429 — limite de pedidos; restantes modalidades não consultadas"
-                    })
+            items = []
+            for page in range(1, 6):
+                params["pagina"] = page
+                response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
+                                      timeout=REQUEST_TIMEOUT)
+                diagnostic["status_code"] = response.status_code
+                if response.status_code != 200:
+                    diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
+                    # Não insistir quando o PNCP limita os pedidos.
+                    if response.status_code == 429:
+                        break
+                    continue
+                payload = response.json()
+                page_items = payload.get("data", []) if isinstance(payload, dict) else payload
+                if not isinstance(page_items, list):
+                    diagnostic["error"] = "Formato de resposta inesperado"
                     break
-                continue
-            payload = response.json()
-            items = payload.get("data", []) if isinstance(payload, dict) else payload
-            if not isinstance(items, list):
-                diagnostic["error"] = "Formato de resposta inesperado"
+                items.extend(page_items)
+                if len(page_items) < 50:
+                    break
+            if diagnostic.get("status_code") != 200:
                 diagnostics.append(diagnostic)
+                if diagnostic.get("status_code") == 429:
+                    break
                 continue
             accepted = 0
             for item in items:
@@ -637,6 +635,7 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                     output.append(result)
                     accepted += 1
             diagnostic["returned_items"] = len(items)
+            diagnostic["pages_checked"] = (len(items) + 49) // 50
             diagnostic["accepted_results"] = accepted
             diagnostics.append(diagnostic)
         except Exception as exc:
@@ -732,7 +731,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.4", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.5", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -761,7 +760,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.4", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.5", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -769,7 +768,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.4", "error": str(exc),
+        return {"ok": False, "version": "2.8.5", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
