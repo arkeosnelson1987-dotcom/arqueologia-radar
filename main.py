@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.1")
+app = FastAPI(title="Arqueologia Radar", version="2.8.2")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -86,7 +86,7 @@ ARCHAEOLOGY_CPVS = {"71351914", "71351910", "71351900", "71351720", "71351811", 
 FAST_TED_TERMS = ["archaeology", "archaeological", "cultural heritage", "arqueologia"]
 WORLD_BANK_TERMS = ["archaeology", "archaeological", "cultural heritage", "heritage"]
 SECOP_TERMS = ["archaeology", "archaeological", "arqueologia", "heritage"]
-BRAZIL_TERMS = ["arqueologia", "arqueológico", "arqueológica", "patrimônio", "património"]
+BRAZIL_TERMS = ["arqueologia", "arqueológico", "arqueológica", "arqueológicos", "arqueológicas", "serviços arqueológicos", "serviços de arqueologia", "patrimônio", "património", "patrimônio cultural", "patrimônio histórico", "património cultural", "património histórico"]
 # PNCP exige o código de modalidade na consulta por publicação. Códigos válidos
 # mais comuns; a consulta é executada uma vez por modalidade e os resultados são filtrados localmente.
 PNCP_MODALITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 99, 100]
@@ -140,7 +140,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.1", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.2", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -539,6 +539,15 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
             if response.status_code != 200:
                 diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
                 diagnostics.append(diagnostic)
+                # O PNCP aplica limitação temporária (HTTP 429). Não insistir
+                # nas restantes modalidades na mesma pesquisa: evita agravar o bloqueio.
+                if response.status_code == 429:
+                    diagnostics.append({
+                        "source": "PNCP — Brasil", "term": term, "method": "GET",
+                        "status": "interrompido",
+                        "reason": "HTTP 429 — limite de pedidos; restantes modalidades não consultadas"
+                    })
+                    break
                 continue
             payload = response.json()
             items = payload.get("data", []) if isinstance(payload, dict) else payload
@@ -664,7 +673,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.1", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.2", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -693,7 +702,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.1", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.2", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -701,7 +710,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.1", "error": str(exc),
+        return {"ok": False, "version": "2.8.2", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
