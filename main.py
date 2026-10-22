@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.3")
+app = FastAPI(title="Arqueologia Radar", version="2.8.4")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -89,7 +89,7 @@ SECOP_TERMS = ["archaeology", "archaeological", "arqueologia", "arqueología", "
 BRAZIL_TERMS = ["arqueologia", "arqueológico", "arqueológica", "arqueológicos", "arqueológicas", "serviços arqueológicos", "serviços de arqueologia", "patrimônio", "património", "patrimônio cultural", "patrimônio histórico", "património cultural", "património histórico"]
 # PNCP exige o código de modalidade na consulta por publicação. Códigos válidos
 # mais comuns; a consulta é executada uma vez por modalidade e os resultados são filtrados localmente.
-PNCP_MODALITIES = [1, 2, 3, 6]
+PNCP_MODALITIES = [1, 3]
 
 COUNTRY_MAP = {
 "PT":"Portugal","ES":"Espanha","FR":"França","DE":"Alemanha","IT":"Itália","NL":"Países Baixos",
@@ -140,7 +140,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.2", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.4", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -174,37 +174,41 @@ def normalize_for_search(value):
 
 
 def repair_mojibake(value):
+    """Corrige texto UTF-8 interpretado incorretamente, sem alterar texto normal."""
     text = normalize_text(value)
-    markers = ("Ã", "Â", "â€", "â€“", "â€”", "\x80", "\x8d")
-    # Some upstream feeds have been decoded twice; attempt a maximum of two safe reversals.
-    for _ in range(2):
+    markers = ("Ã", "Â", "â€", "â€“", "â€”", "ðŸ")
+    for _ in range(3):
         if not any(marker in text for marker in markers):
             break
-        repaired = None
+        candidates = []
         for encoding in ("cp1252", "latin-1"):
             try:
                 candidate = text.encode(encoding).decode("utf-8")
-                old_count = sum(text.count(marker) for marker in markers)
-                new_count = sum(candidate.count(marker) for marker in markers)
-                if candidate != text and new_count < old_count:
-                    repaired = candidate
-                    break
             except (UnicodeEncodeError, UnicodeDecodeError):
                 continue
-        if repaired is None:
-            replacements = {
-                "Ã¡":"á", "Ã©":"é", "Ã­":"í", "Ã³":"ó", "Ãº":"ú", "Ã£":"ã",
-                "Ãµ":"õ", "Ã§":"ç", "Ã‰":"É", "Ã":"Í", "Ã“":"Ó", "Ãš":"Ú",
-                "Ã€":"À", "Ã‡":"Ç", "Ã":"Á", "â€“":"–", "â€”":"—",
-                "â€œ":"“", "â€":"”", "â€˜":"‘", "â€™":"’", "Â":""
-            }
-            candidate = text
-            for old, replacement in replacements.items():
-                candidate = candidate.replace(old, replacement)
-            if candidate == text:
-                break
-            repaired = candidate
-        text = repaired
+            if candidate != text:
+                old_score = sum(text.count(marker) for marker in markers)
+                new_score = sum(candidate.count(marker) for marker in markers)
+                if new_score < old_score:
+                    candidates.append((new_score, candidate))
+        if candidates:
+            text = min(candidates, key=lambda item: item[0])[1]
+            continue
+        replacements = {
+            "Ã¡":"á", "Ã ":"à", "Ã¢":"â", "Ã£":"ã", "Ã¤":"ä",
+            "Ã©":"é", "Ã¨":"è", "Ãª":"ê", "Ã­":"í", "Ã¬":"ì",
+            "Ã³":"ó", "Ã²":"ò", "Ã´":"ô", "Ãµ":"õ", "Ãº":"ú",
+            "Ã¹":"ù", "Ã§":"ç", "Ã‰":"É", "Ã€":"À", "Ã‚":"Â",
+            "Ãƒ":"Ã", "Ã‡":"Ç", "Ã":"Í", "Ã“":"Ó", "Ãš":"Ú",
+            "Ã":"Á", "Ã•":"Õ", "â€“":"–", "â€”":"—", "â€œ":"“",
+            "â€":"”", "â€˜":"‘", "â€™":"’", "Â":""
+        }
+        candidate = text
+        for old, replacement in replacements.items():
+            candidate = candidate.replace(old, replacement)
+        if candidate == text:
+            break
+        text = candidate
     return text
 
 
@@ -324,20 +328,31 @@ def has_any_term(text, terms):
 
 
 def classify_result(title, description, cpvs, search_mode="direct"):
-    title_text = normalize_text(title)
-    description_text = normalize_text(description)
-    combined = f"{title_text} {description_text}"
-    title_direct = has_any_term(title_text, DIRECT_TERMS)
-    description_direct = has_any_term(description_text, DIRECT_TERMS)
+    title_text = repair_mojibake(title)
+    description_text = repair_mojibake(description)
+    title_norm = normalize_for_search(title_text)
+    description_norm = normalize_for_search(description_text)
+    combined = f"{title_norm} {description_norm}"
+    title_direct = has_any_term(title_norm, DIRECT_TERMS)
+    description_direct = has_any_term(description_norm, DIRECT_TERMS)
     cpv_direct = any(code in ARCHAEOLOGY_CPVS for code in cpvs)
     heritage = has_any_term(combined, HERITAGE_TERMS)
     major = has_any_term(combined, MAJOR_PROJECT_TERMS)
 
-    # A arqueologia no título é o sinal mais forte. Um CPV isolado pode aparecer
-    # em contratos de engenharia mais amplos e não deve, por si só, ser classificado como direto.
-    if title_direct:
+    # Fornecimentos/equipamentos que apenas mencionam um laboratório arqueológico
+    # não devem ser promovidos a serviços arqueológicos diretos.
+    supply_terms = ("equipamiento", "equipos", "equipo", "suministro", "suministros",
+                    "material de laboratorio", "chemical products", "laboratory equipment",
+                    "fornecimento", "equipamento", "produtos quimicos", "material de laboratorio")
+    supply_only = has_any_term(title_norm, supply_terms)
+
+    if title_direct and not supply_only:
         return "Arqueologia direta"
-    if description_direct or cpv_direct:
+    if title_direct and supply_only:
+        return "Fornecimento relacionado com arqueologia"
+    if description_direct and not supply_only:
+        return "Serviço com componente arqueológica"
+    if cpv_direct and (description_direct or (search_mode != "direct" and heritage)):
         return "Serviço com componente arqueológica"
     if search_mode != "direct" and heritage and major:
         return "Património / grandes projetos"
@@ -358,7 +373,7 @@ def make_result(title, description, buyer, country, source, url, published, dead
     published_date = parse_date(published)
     deadline_date = parse_date(deadline)
     score = {"Arqueologia direta": 100, "Serviço com componente arqueológica": 78,
-             "Património / grandes projetos": 62, "Património cultural": 50}.get(classification, 40)
+             "Património / grandes projetos": 62, "Património cultural": 50, "Fornecimento relacionado com arqueologia": 35}.get(classification, 40)
     return {
         "title": title, "description": description, "buyer": buyer,
         "country": country_name(code) if code else country_text,
@@ -472,6 +487,7 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
                                  url, published, deadline, cpvs, search_mode)
             if result and recent_enough(result["date"]):
                 output.append(result)
+        diagnostic["returned_items"] = len(notices)
         diagnostic["accepted_results"] = len(output)
         diagnostics.append(diagnostic)
         return output
@@ -481,11 +497,12 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
 
 
 def query_secop(term, diagnostics=None, search_mode="direct"):
+    """Pesquisa SECOP II com os campos conhecidos e normalização de chaves/acentos."""
     if diagnostics is None:
         diagnostics = []
     diagnostic = {"source": "SECOP II — Colômbia", "term": term, "method": "GET"}
     try:
-        response = SESSION.get(SECOP_URL, params={"$limit": 1000, "$q": term}, timeout=REQUEST_TIMEOUT)
+        response = SESSION.get(SECOP_URL, params={"$limit": 1000, "$q": term}, timeout=(5, 18))
         diagnostic["status_code"] = response.status_code
         if response.status_code != 200:
             diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
@@ -497,28 +514,51 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
             return []
         output = []
         normalized_term = normalize_for_search(term)
-        secop_relevance_terms = [normalize_for_search(t) for t in SECOP_TERMS + ["servicios arqueologicos", "patrimonio cultural"]]
+        secop_terms = [normalize_for_search(t) for t in SECOP_TERMS + [
+            "servicios arqueologicos", "servicio de arqueologia", "seguimiento arqueologico",
+            "prospeccion arqueologica", "excavacion arqueologica", "patrimonio cultural"]]
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            title = first_value(item, ["nombre_del_procedimiento", "descripcion_del_proceso", "descripci_n_del_procedimiento", "nombre_del_proceso", "titulo", "description"])
-            description = first_value(item, ["descripci_n_del_procedimiento", "descripcion_del_proceso", "descripcion", "description", "objeto", "objeto_del_contrato"])
+            # O Socrata tem nomes de campos com variantes/acentos; a procura recursiva
+            # usa todas as chaves disponíveis e estas variantes explícitas.
+            title = first_value(item, ["nombre_del_procedimiento", "nombre_del_proceso",
+                "descripcion_del_proceso", "descripci_n_del_procedimiento",
+                "descripción_del_procedimiento", "objeto_del_contrato", "objeto_a_contratar",
+                "nombre_procedimiento", "titulo", "title", "description"])
+            description = first_value(item, ["descripci_n_del_procedimiento", "descripcion_del_proceso",
+                "descripcion_del_procedimiento", "descripción_del_procedimiento", "descripcion",
+                "objeto", "objeto_del_contrato", "objeto_a_contratar", "detalle_del_objeto_a_contratar",
+                "description", "justificacion"])
             if not title and description:
                 title = description
+            title = repair_mojibake(title)
+            description = repair_mojibake(description)
             combined = normalize_for_search(f"{title or ''} {description or ''}")
-            if normalized_term not in combined and not any(t in combined for t in secop_relevance_terms):
+            # A API devolve pesquisa textual ampla. Só aceitar se o próprio registo
+            # contiver linguagem arqueológica/patrimonial relevante.
+            if not any(t and t in combined for t in secop_terms):
                 continue
-            buyer = first_value(item, ["nombre_entidad", "entidad", "buyer", "nombre_de_la_entidad"])
-            published = first_value(item, ["fecha_de_publicacion", "fecha_publicacion", "fecha_de_ultima_publicacion", "fecha_de_publicacion_del_proceso"])
-            deadline = first_value(item, ["fecha_de_recepcion_de_respuestas", "fecha_de_cierre", "fecha_cierre", "fecha_de_fin"])
-            url = first_value(item, ["urlproceso", "url", "url_del_proceso"])
+            buyer = first_value(item, ["nombre_entidad", "entidad", "nombre_de_la_entidad",
+                "nombre_entidad_compradora", "razon_social", "buyer"])
+            published = first_value(item, ["fecha_de_publicacion", "fecha_publicacion",
+                "fecha_de_ultima_publicacion", "fecha_de_publicacion_del_proceso",
+                "fecha_publicacion_proceso", "fecha_de_publicacion_del_proceso"])
+            deadline = first_value(item, ["fecha_de_recepcion_de_respuestas", "fecha_de_cierre",
+                "fecha_cierre", "fecha_de_fin", "fecha_de_presentacion_de_ofertas"])
+            url = first_value(item, ["urlproceso", "url", "url_del_proceso", "enlace_proceso",
+                "url_proceso", "link"])
             cpvs = cpv_values(first_value(item, ["codigo_principal_de_categoria", "codigo_unspsc", "cpv"]))
-            result = make_result(title, description, buyer, "CO", "SECOP II — Colômbia",
+            result = make_result(title, description, buyer, "CO", "SECOP II — Colombia",
                                  url, published, deadline, cpvs, search_mode)
-            if result and recent_enough(result["date"]):
+            if result and (recent_enough(result["date"]) or not result["date"]):
+                if not result["date"]:
+                    result["date_status"] = "Data de publicação não fornecida pela fonte"
+                    result["score"] = max(25, result["score"] - 15)
                 output.append(result)
         diagnostic["returned_items"] = len(payload)
         diagnostic["accepted_results"] = len(output)
+        diagnostic["relevance_terms"] = len(secop_terms)
         diagnostics.append(diagnostic)
         return output
     except Exception as exc:
@@ -547,7 +587,7 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 "dataFinal": date.today().strftime("%Y%m%d"),
                 "codigoModalidadeContratacao": modality,
                 "pagina": 1,
-                "tamanhoPagina": 10,
+                "tamanhoPagina": 50,
             }
             response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
                                   timeout=REQUEST_TIMEOUT)
@@ -590,7 +630,10 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 cpvs = cpv_values(first_value(item, ["codigoItem", "codigoCatmat", "cpv"]))
                 result = make_result(title, description, buyer, "BR", "PNCP — Brasil", url,
                                      published, deadline, cpvs, search_mode)
-                if result and recent_enough(result["date"]):
+                if result and (recent_enough(result["date"]) or not result["date"]):
+                    if not result["date"]:
+                        result["date_status"] = "Data de publicação não fornecida pela fonte"
+                        result["score"] = max(25, result["score"] - 15)
                     output.append(result)
                     accepted += 1
             diagnostic["returned_items"] = len(items)
@@ -689,7 +732,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.3", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.4", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -718,7 +761,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.3", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.4", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -726,7 +769,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.3", "error": str(exc),
+        return {"ok": False, "version": "2.8.4", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
