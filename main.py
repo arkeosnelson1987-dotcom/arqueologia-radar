@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.6")
+app = FastAPI(title="Arqueologia Radar", version="2.8.7")
 
 REQUEST_TIMEOUT = 15
 PERIOD_DAYS = 365
@@ -60,7 +60,11 @@ DIRECT_TERMS = [
     "archéologue", "fouille archéologique", "surveillance archéologique",
     "diagnostic archéologique", "arqueologia", "arqueológico", "arqueóloga", "arqueólogo",
     "escavação arqueológica", "acompanhamento arqueológico", "prospeção arqueológica",
-    "prospecção arqueológica", "sondagem arqueológica", "archäologie", "archäologisch",
+    "prospecção arqueológica", "sondagem arqueológica", "serviços arqueológicos",
+    "serviço arqueológico", "servicios arqueologicos", "servicio arqueologico",
+    "excavacion arqueologica", "excavación arqueológica", "seguimiento arqueologico",
+    "prospeccion arqueologica", "prospección arqueológica", "arqueologia preventiva",
+    "archäologie", "archäologisch",
     "archäologische ausgrabung", "archeologie", "archeologisch", "archeologia",
     "archeologico", "scavo archeologico", "indagine archeologica", "arkeologi",
     "arkeologisk", "arkeologinen", "arheologie", "arheologic",
@@ -140,7 +144,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.6", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.7", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -367,15 +371,30 @@ def classify_result(title, description, cpvs, search_mode="direct"):
 
     # Fornecimentos/equipamentos que apenas mencionam um laboratório arqueológico
     # não devem ser promovidos a serviços arqueológicos diretos.
-    supply_terms = ("equipamiento", "equipos", "equipo", "suministro", "suministros",
-                    "material de laboratorio", "chemical products", "laboratory equipment",
-                    "fornecimento", "equipamento", "produtos quimicos", "material de laboratorio")
+    supply_terms = (
+        "equipamiento", "equipos", "equipo", "suministro", "suministros",
+        "material de laboratorio", "chemical products", "laboratory equipment",
+        "fornecimento", "equipamento", "equipamentos", "produtos quimicos",
+        "material de laboratorio", "suministro de materiales", "suministro de equipos",
+        "suministro de bienes", "compra de equipos", "adquisicion de equipos",
+        "supply of equipment", "purchase of equipment", "supply of materials",
+        "equipment purchase", "laboratory supplies", "materiales de laboratorio"
+    )
     supply_only = has_any_term(title_norm, supply_terms)
 
+    # Não apresentar aquisições de bens como serviços arqueológicos só porque o título
+    # menciona arqueologia. Se a descrição explicitar um serviço, pode continuar a ser aceite.
     if title_direct and not supply_only:
         return "Arqueologia direta"
     if title_direct and supply_only:
-        return "Fornecimento relacionado com arqueologia"
+        if description_direct and has_any_term(description_norm, (
+            "excavation", "excavacion", "excavación", "excavacao", "escavação",
+            "monitoring", "seguimiento arqueologico", "acompanhamento arqueológico",
+            "archaeological services", "servicios arqueologicos", "serviços arqueológicos",
+            "prospeccion arqueologica", "prospeção arqueológica", "fieldwork"
+        )):
+            return "Serviço com componente arqueológica"
+        return ""
     if description_direct and not supply_only:
         return "Serviço com componente arqueológica"
     if cpv_direct and (description_direct or (search_mode != "direct" and heritage)):
@@ -408,6 +427,7 @@ def make_result(title, description, buyer, country, source, url, published, dead
         "date": published_date.isoformat() if published_date else "",
         "deadline": deadline_date.isoformat() if deadline_date else "",
         "cpv": cpvs, "classification": classification, "score": score,
+        "date_status": "Data de publicação confirmada" if published_date else "Data de publicação não fornecida pela fonte",
     }
 
 
@@ -522,6 +542,9 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
                 output.append(result)
         diagnostic["returned_items"] = len(notices)
         diagnostic["accepted_results"] = len(output)
+        diagnostic["useful_results"] = len(output) > 0
+        if not output:
+            diagnostic["note"] = "A API respondeu, mas não devolveu avisos que passassem os filtros de relevância e data."
         diagnostics.append(diagnostic)
         return output
     except Exception as exc:
@@ -584,14 +607,22 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
             cpvs = cpv_values(first_value(item, ["codigo_principal_de_categoria", "codigo_unspsc", "cpv"]))
             result = make_result(title, description, buyer, "CO", "SECOP II — Colombia",
                                  url, published, deadline, cpvs, search_mode)
-            if result and (recent_enough(result["date"]) or not result["date"]):
-                if not result["date"]:
-                    result["date_status"] = "Data de publicação não fornecida pela fonte"
-                    result["score"] = max(25, result["score"] - 15)
+            if result and recent_enough(result["date"]):
+                output.append(result)
+            elif result and not result["date"]:
+                # Mantém o registo para transparência, mas assinala a ausência de data
+                # e reduz fortemente a pontuação para não o confundir com oportunidade recente.
+                result["date_status"] = "Data de publicação desconhecida — confirmar no portal"
+                result["score"] = max(20, result["score"] - 25)
+                result["date_unconfirmed"] = True
                 output.append(result)
         diagnostic["returned_items"] = len(payload)
         diagnostic["accepted_results"] = len(output)
+        diagnostic["unknown_date_results"] = sum(1 for item in output if item.get("date_unconfirmed"))
         diagnostic["relevance_terms"] = len(secop_terms)
+        diagnostic["useful_results"] = len(output) > 0
+        if not output:
+            diagnostic["note"] = "A API respondeu, mas não devolveu resultados relevantes dentro dos filtros."
         diagnostics.append(diagnostic)
         return output
     except Exception as exc:
@@ -768,7 +799,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.6", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.8.7", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
@@ -797,7 +828,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.6", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.8.7", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -805,7 +836,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.6", "error": str(exc),
+        return {"ok": False, "version": "2.8.7", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
