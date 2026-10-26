@@ -338,8 +338,14 @@ def first_value(data, keys):
     return recursive_find(data, keys)
 
 
-def safe_first_text(data, keys):
-    for item in flatten_values(first_value(data, keys)):
+
+def safe_first_text(data, keys=None):
+    if keys is None:
+        value = data
+    else:
+        value = first_value(data, keys)
+
+    for item in flatten_values(value):
         text = repair_mojibake(item)
         if text:
             return text
