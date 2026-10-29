@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.8.8")
+app = FastAPI(title="Arqueologia Radar", version="2.9.0")
 
 REQUEST_TIMEOUT = 15
 PERIOD_DAYS = 365
@@ -50,6 +50,64 @@ SOURCES = [
     {"name": "AusTender", "type": "portal", "automatic": False, "url": "https://www.tenders.gov.au/"},
     {"name": "NZ GETS", "type": "portal", "automatic": False, "url": "https://www.gets.govt.nz/"},
     {"name": "Redeia", "type": "portal", "automatic": False, "url": "https://www.ree.es/"},
+    # Portais nacionais adicionais para expansão mundial (consulta manual nesta versão)
+    {"name": "Reino Unido — Find a Tender", "type": "portal", "automatic": False, "url": "https://www.find-tender.service.gov.uk/"},
+    {"name": "Reino Unido — Contracts Finder", "type": "portal", "automatic": False, "url": "https://www.contractsfinder.service.gov.uk/"},
+    {"name": "França — PLACE", "type": "portal", "automatic": False, "url": "https://www.marches-publics.gouv.fr/"},
+    {"name": "Alemanha — Bund.de concursos", "type": "portal", "automatic": False, "url": "https://www.service.bund.de/"},
+    {"name": "Itália — Acquisti in Rete", "type": "portal", "automatic": False, "url": "https://www.acquistinretepa.it/"},
+    {"name": "Países Baixos — TenderNed", "type": "portal", "automatic": False, "url": "https://www.tenderned.nl/"},
+    {"name": "Bélgica — e-Procurement", "type": "portal", "automatic": False, "url": "https://www.publicprocurement.be/"},
+    {"name": "Irlanda — eTenders", "type": "portal", "automatic": False, "url": "https://www.etenders.gov.ie/"},
+    {"name": "Polónia — e-Zamówienia", "type": "portal", "automatic": False, "url": "https://ezamowienia.gov.pl/"},
+    {"name": "Canadá — CanadaBuys", "type": "portal", "automatic": False, "url": "https://canadabuys.canada.ca/"},
+    {"name": "Índia — Central Public Procurement Portal", "type": "portal", "automatic": False, "url": "https://eprocure.gov.in/"},
+    {"name": "Japão — Government Procurement", "type": "portal", "automatic": False, "url": "https://www.jetro.go.jp/en/database/procurement/"},
+    {"name": "Coreia do Sul — KONEPS", "type": "portal", "automatic": False, "url": "https://www.pps.go.kr/eng/"},
+    {"name": "Singapura — GeBIZ", "type": "portal", "automatic": False, "url": "https://www.gebiz.gov.sg/"},
+    {"name": "Malásia — ePerolehan", "type": "portal", "automatic": False, "url": "https://www.eperolehan.gov.my/"},
+    {"name": "Filipinas — PhilGEPS", "type": "portal", "automatic": False, "url": "https://www.philgeps.gov.ph/"},
+    {"name": "Indonésia — LPSE", "type": "portal", "automatic": False, "url": "https://lpse.lkpp.go.id/"},
+    {"name": "Paquistão — PPRA", "type": "portal", "automatic": False, "url": "https://ppra.gov.pk/"},
+    {"name": "Bangladesh — e-GP", "type": "portal", "automatic": False, "url": "https://www.eprocure.gov.bd/"},
+    {"name": "Sri Lanka — Government Procurement", "type": "portal", "automatic": False, "url": "https://www.promise.lk/"},
+    {"name": "México — Compras MX", "type": "portal", "automatic": False, "url": "https://comprasmx.buengobierno.gob.mx/"},
+    {"name": "Argentina — COMPR.AR", "type": "portal", "automatic": False, "url": "https://comprar.gob.ar/"},
+    {"name": "Peru — SEACE", "type": "portal", "automatic": False, "url": "https://www.gob.pe/osce"},
+    {"name": "Uruguai — Compras Estatales", "type": "portal", "automatic": False, "url": "https://www.comprasestatales.gub.uy/"},
+    {"name": "Costa Rica — SICOP", "type": "portal", "automatic": False, "url": "https://www.sicop.go.cr/"},
+    {"name": "Panamá — PanamaCompra", "type": "portal", "automatic": False, "url": "https://www.panamacompra.gob.pa/"},
+    {"name": "Gana — GHANEPS", "type": "portal", "automatic": False, "url": "https://www.ghaneps.gov.gh/"},
+    {"name": "Nigéria — Bureau of Public Procurement", "type": "portal", "automatic": False, "url": "https://www.bpp.gov.ng/"},
+    {"name": "Ruanda — Umucyo", "type": "portal", "automatic": False, "url": "https://www.umucyo.gov.rw/"},
+    {"name": "Zâmbia — ZPPA", "type": "portal", "automatic": False, "url": "https://www.zppa.org.zm/"},
+    {"name": "Botswana — PPADB", "type": "portal", "automatic": False, "url": "https://www.ppadb.co.bw/"},
+    {"name": "Namíbia — eProcurement", "type": "portal", "automatic": False, "url": "https://eprocurement.gov.na/"},
+    {"name": "Turquia — EKAP", "type": "portal", "automatic": False, "url": "https://ekap.kik.gov.tr/"},
+    {"name": "Israel — Government Procurement", "type": "portal", "automatic": False, "url": "https://mr.gov.il/"},
+    {"name": "Jordânia — JONEPS", "type": "portal", "automatic": False, "url": "https://www.joneps.gov.jo/"},
+    {"name": "Cazaquistão — Public Procurement", "type": "portal", "automatic": False, "url": "https://goszakup.gov.kz/"},
+    {"name": "Austrália — AusTender", "type": "portal", "automatic": False, "url": "https://www.tenders.gov.au/"},
+    {"name": "Nova Zelândia — GETS", "type": "portal", "automatic": False, "url": "https://www.gets.govt.nz/"},
+    # China — portais públicos centrais e locais
+    {"name": "China — China Government Procurement Network", "type": "portal", "automatic": False, "url": "https://www.ccgp.gov.cn/"},
+    {"name": "China — Shanghai Government Procurement", "type": "portal", "automatic": False, "url": "https://www.zfcg.sh.gov.cn/"},
+    {"name": "China — Beijing Government Procurement", "type": "portal", "automatic": False, "url": "https://www.ccgp-beijing.gov.cn/"},
+    # Médio Oriente — portais oficiais nacionais e regionais
+    {"name": "Arábia Saudita — Etimad", "type": "portal", "automatic": False, "url": "https://tenders.etimad.sa/"},
+    {"name": "Emirados Árabes Unidos — Digital Procurement Platform", "type": "portal", "automatic": False, "url": "https://mof.gov.ae/en/public-finance/government-procurement/digital-procurement-platform/"},
+    {"name": "Dubai — eSupply", "type": "portal", "automatic": False, "url": "https://esupply.dubai.gov.ae/"},
+    {"name": "Qatar — Monaqasat", "type": "portal", "automatic": False, "url": "https://monaqasat.mof.gov.qa/"},
+    {"name": "Omã — Tender Board eTendering", "type": "portal", "automatic": False, "url": "https://etendering.tenderboard.gov.om/"},
+    {"name": "Bahrain — Tender Board", "type": "portal", "automatic": False, "url": "https://www.tenderboard.gov.bh/"},
+    {"name": "Kuwait — Central Agency for Public Tenders", "type": "portal", "automatic": False, "url": "https://capt.gov.kw/"},
+    {"name": "Jordânia — JONEPS", "type": "portal", "automatic": False, "url": "https://www.joneps.gov.jo/"},
+    {"name": "Egito — Government Tenders Portal", "type": "portal", "automatic": False, "url": "https://etenders.gov.eg/"},
+    {"name": "Iraque — Ministry of Planning", "type": "portal", "automatic": False, "url": "https://mop.gov.iq/"},
+    {"name": "Líbano — Public Procurement Authority", "type": "portal", "automatic": False, "url": "https://www.ppa.gov.lb/"},
+    {"name": "Israel — Government Procurement Administration", "type": "portal", "automatic": False, "url": "https://mr.gov.il/"},
+    {"name": "Turquia — EKAP", "type": "portal", "automatic": False, "url": "https://ekap.kik.gov.tr/"},
+    {"name": "Chipre — eProcurement", "type": "portal", "automatic": False, "url": "https://www.eprocurement.gov.cy/"},
 ]
 
 DIRECT_TERMS = [
@@ -144,7 +202,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.8.7", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.0", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -806,8 +864,9 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.8.8", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.9.0", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
+            "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
             "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
 
@@ -815,7 +874,8 @@ def health():
 @app.get("/api/sources")
 def api_sources():
     return {"sources": SOURCES, "count": len(SOURCES),
-            "automatic": sum(1 for source in SOURCES if source.get("automatic"))}
+            "automatic": sum(1 for source in SOURCES if source.get("automatic")),
+            "manual": sum(1 for source in SOURCES if not source.get("automatic"))}
 
 
 @app.get("/api/search")
@@ -835,7 +895,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.8.8", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.9.0", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -843,7 +903,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.8.8", "error": str(exc),
+        return {"ok": False, "version": "2.9.0", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
