@@ -10,9 +10,9 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.0")
+app = FastAPI(title="Arqueologia Radar", version="2.9.1")
 
-REQUEST_TIMEOUT = 15
+REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
 PAGE_SIZE = 250
 
@@ -202,7 +202,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.0", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.1", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -567,23 +567,29 @@ def query_ted(term, diagnostics=None, search_mode="direct", country_code=None):
 
 
 def query_world_bank(term, diagnostics=None, search_mode="direct"):
+    """Consulta a API oficial de avisos de contratação do Banco Mundial."""
     if diagnostics is None:
         diagnostics = []
     diagnostic = {"source": "World Bank Procurement", "term": term, "method": "GET"}
     try:
-        response = SESSION.get(WORLD_BANK_URL, params={"qterm": term, "rows": 100, "format": "json"},
-                               timeout=(5, 12))
+        params = {
+            "qterm": term, "rows": 200, "os": 0, "format": "json",
+            "srt": "noticedate desc,id asc",
+        }
+        response = SESSION.get(WORLD_BANK_URL, params=params, timeout=(8, 25))
         diagnostic["status_code"] = response.status_code
         if response.status_code != 200:
             diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
             diagnostics.append(diagnostic)
             return []
         payload = response.json()
-        notices = (payload.get("procurements") or payload.get("procnotices") or
+        notices = (payload.get("procnotices") or payload.get("procurements") or
                    payload.get("notices") or payload.get("results") or payload.get("data") or [])
         if isinstance(notices, dict):
-            notices = (notices.get("procnotice") or notices.get("procurement") or
-                       notices.get("notice") or notices.get("results") or list(notices.values()))
+            # A API oficial devolve frequentemente procnotices como objecto indexado pelo ID.
+            nested = (notices.get("procnotice") or notices.get("procurement") or
+                      notices.get("notice") or notices.get("results"))
+            notices = nested if nested is not None else list(notices.values())
         if isinstance(notices, dict):
             notices = list(notices.values())
         if not isinstance(notices, list):
@@ -593,13 +599,23 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
         for item in notices:
             if not isinstance(item, dict):
                 continue
-            title = first_value(item, ["project_name", "title", "notice_title", "procurement_name", "contract_description"])
-            description = first_value(item, ["description", "short_description", "procurement_description", "contract_description"])
-            buyer = first_value(item, ["borrower", "buyer", "client", "country_name"])
-            country = first_value(item, ["countrycode", "country_code", "country"])
-            published = first_value(item, ["publication_date", "published_date", "notice_date", "date"])
-            deadline = first_value(item, ["deadline", "submission_deadline", "bid_deadline"])
-            url = first_value(item, ["url", "notice_url", "procurement_url", "link"])
+            # Nomes de campo documentados no conjunto oficial Procurement Notice.
+            title = first_value(item, ["bid_description", "title", "notice_title",
+                                       "project_name", "procurement_name", "contract_description"])
+            description = first_value(item, ["bid_description", "description", "short_description",
+                                             "procurement_description", "contract_description"])
+            buyer = first_value(item, ["contact_organization", "borrower", "buyer", "client",
+                                       "country_name", "country"])
+            country = first_value(item, ["country_code", "countrycode", "country_name", "country"])
+            published = first_value(item, ["publication_date", "notice_date", "published_date",
+                                           "noticedate", "date"])
+            deadline = first_value(item, ["deadline_date", "submission_deadline_date",
+                                          "submission_deadline", "bid_deadline", "deadline"])
+            url = first_value(item, ["url", "source_url", "notice_url", "procurement_url", "link"])
+            if not url:
+                notice_id = first_value(item, ["id", "notice_id"])
+                if notice_id:
+                    url = f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{notice_id}"
             cpvs = cpv_values(first_value(item, ["cpv", "cpvs", "classification"]))
             result = make_result(title, description, buyer, country, "World Bank Procurement",
                                  url, published, deadline, cpvs, search_mode)
@@ -609,7 +625,7 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
         diagnostic["accepted_results"] = len(output)
         diagnostic["useful_results"] = len(output) > 0
         if not output:
-            diagnostic["note"] = "A API respondeu, mas não devolveu avisos que passassem os filtros de relevância e data."
+            diagnostic["note"] = "A API respondeu, mas nenhum aviso passou os filtros de relevância e data; verificar os campos e a pesquisa por termo."
         diagnostics.append(diagnostic)
         return output
     except Exception as exc:
@@ -696,82 +712,102 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
 
 
 def query_brazil(term, diagnostics=None, search_mode="direct"):
-    """Consulta anúncios publicados no PNCP em modalidades válidas e filtra termos localmente."""
+    """Consulta o PNCP com paginação limitada, repetição de falhas transitórias e filtro local."""
     if diagnostics is None:
         diagnostics = []
     output = []
-    # A pesquisa mundial genérica deve reconhecer os termos em português do Brasil.
     normalized_term = normalize_for_search(term)
     if normalized_term in {"archaeology", "archaeological", "arqueologia", "cultural heritage", "heritage"}:
         search_terms = [normalize_for_search(item) for item in BRAZIL_TERMS]
     else:
         search_terms = [normalized_term]
 
-    # Evita chamadas desnecessárias: as modalidades são consultadas uma vez por pesquisa.
     for modality in PNCP_MODALITIES:
         diagnostic = {"source": "PNCP — Brasil", "term": term, "method": "GET", "modality": modality}
+        returned = 0
+        accepted = 0
+        pages_checked = 0
         try:
-            params = {
-                "dataInicial": cutoff_date().strftime("%Y%m%d"),
-                "dataFinal": date.today().strftime("%Y%m%d"),
-                "codigoModalidadeContratacao": modality,
-                "pagina": 1,
-                "tamanhoPagina": 50,
-            }
-            items = []
-            # Só uma página por modalidade nesta pesquisa: reduz a pressão sobre a API.
-            # A pesquisa seguinte poderá recolher mais avisos sem provocar rajadas de pedidos.
-            params["pagina"] = 1
-            response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao", params=params,
-                                   timeout=(5, 12))
-            diagnostic["status_code"] = response.status_code
-            if response.status_code != 200:
-                diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
-                diagnostics.append(diagnostic)
-                # Em HTTP 429 não se tenta outra modalidade na mesma pesquisa.
-                if response.status_code == 429:
+            # 100 registos por página; duas páginas por modalidade evitam limitar a pesquisa
+            # aos primeiros 50 avisos mais recentes, sem provocar dezenas de pedidos ao PNCP.
+            for page in (1, 2):
+                params = {
+                    "dataInicial": cutoff_date().strftime("%Y%m%d"),
+                    "dataFinal": date.today().strftime("%Y%m%d"),
+                    "codigoModalidadeContratacao": modality,
+                    "pagina": page,
+                    "tamanhoPagina": 100,
+                }
+                try:
+                    response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao",
+                                           params=params, timeout=(8, 22))
+                except requests.exceptions.RequestException:
+                    # Uma única repetição em falhas transitórias (por exemplo, timeout).
+                    response = SESSION.get(f"{PNCP_BASE_URL}/contratacoes/publicacao",
+                                           params=params, timeout=(8, 28))
+                diagnostic["status_code"] = response.status_code
+                if response.status_code != 200:
+                    diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
+                    if response.status_code == 429:
+                        diagnostic["note"] = "Limite de pedidos do PNCP atingido; a fonte será tentada novamente na próxima pesquisa."
+                        break
+                    if page == 1:
+                        break
+                    continue
+                payload = response.json()
+                page_items = payload.get("data", []) if isinstance(payload, dict) else payload
+                if not isinstance(page_items, list):
+                    diagnostic["error"] = "Formato de resposta inesperado"
                     break
-                continue
-            payload = response.json()
-            page_items = payload.get("data", []) if isinstance(payload, dict) else payload
-            if not isinstance(page_items, list):
-                diagnostic["error"] = "Formato de resposta inesperado"
-                diagnostics.append(diagnostic)
-                continue
-            items.extend(page_items)
-            if diagnostic.get("status_code") != 200:
-                continue
-            accepted = 0
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                title = first_value(item, ["objetoCompra", "objeto", "descricao", "description"])
-                description = first_value(item, ["informacaoComplementar", "objetoCompra", "objeto", "descricao", "description"])
-                searchable = normalize_for_search(f"{title or ''} {description or ''}")
-                if not any(search_term and search_term in searchable for search_term in search_terms):
-                    continue
-                buyer = first_value(item, ["orgaoEntidade", "nomeUnidadeCompradora", "razaoSocial", "nomeOrgao"])
-                published = first_value(item, ["dataPublicacaoPncp", "dataPublicacao", "dataInclusao"])
-                deadline = first_value(item, ["dataEncerramentoProposta", "dataAberturaProposta", "dataFimVigencia"])
-                url = first_value(item, ["linkSistemaOrigem", "linkProcessoEletronico", "url", "uri"])
-                control_number = first_value(item, ["numeroControlePNCP"])
-                if not url and control_number:
-                    url = "https://pncp.gov.br/app/editais/" + str(control_number)
-                cpvs = cpv_values(first_value(item, ["codigoItem", "codigoCatmat", "cpv"]))
-                result = make_result(title, description, buyer, "BR", "PNCP — Brasil", url,
-                                     published, deadline, cpvs, search_mode)
-                if result and (recent_enough(result["date"]) or not result["date"]):
-                    if not result["date"]:
-                        result["date_status"] = "Data de publicação não fornecida pela fonte"
-                        result["score"] = max(25, result["score"] - 15)
-                    output.append(result)
-                    accepted += 1
-            diagnostic["returned_items"] = len(items)
-            diagnostic["pages_checked"] = 1
+                returned += len(page_items)
+                pages_checked += 1
+                for item in page_items:
+                    if not isinstance(item, dict):
+                        continue
+                    title = first_value(item, ["objetoCompra", "objeto", "descricao", "description"])
+                    description = first_value(item, ["informacaoComplementar", "objetoCompra",
+                                                     "objeto", "descricao", "description"])
+                    searchable = normalize_for_search(f"{title or ''} {description or ''}")
+                    if not any(search_term and search_term in searchable for search_term in search_terms):
+                        continue
+                    buyer_data = first_value(item, ["orgaoEntidade", "nomeUnidadeCompradora",
+                                                     "razaoSocial", "nomeOrgao"])
+                    buyer = first_value(buyer_data, ["razaoSocial", "nome", "nomeOrgao"]) if isinstance(buyer_data, dict) else buyer_data
+                    published = first_value(item, ["dataPublicacaoPncp", "dataPublicacao", "dataInclusao"])
+                    deadline = first_value(item, ["dataEncerramentoProposta", "dataAberturaProposta", "dataFimVigencia"])
+                    url = first_value(item, ["linkSistemaOrigem", "linkProcessoEletronico", "url", "uri"])
+                    control_number = first_value(item, ["numeroControlePNCP"])
+                    if not url and control_number:
+                        url = "https://pncp.gov.br/app/editais/" + str(control_number)
+                    cpvs = cpv_values(first_value(item, ["codigoItem", "codigoCatmat", "cpv"]))
+                    result = make_result(title, description, buyer, "BR", "PNCP — Brasil", url,
+                                         published, deadline, cpvs, search_mode)
+                    if result and (recent_enough(result["date"]) or not result["date"]):
+                        if not result["date"]:
+                            result["date_status"] = "Data de publicação não fornecida pela fonte"
+                            result["score"] = max(25, result["score"] - 15)
+                        output.append(result)
+                        accepted += 1
+                # Se a API indicar que já não existem páginas, não insistir.
+                total_pages = first_value(payload, ["totalPaginas", "total_pages", "numeroPaginas"])
+                if total_pages:
+                    try:
+                        if page >= int(total_pages):
+                            break
+                    except (TypeError, ValueError):
+                        pass
+                if not page_items:
+                    break
+            diagnostic["returned_items"] = returned
+            diagnostic["pages_checked"] = pages_checked
             diagnostic["accepted_results"] = accepted
+            diagnostic["useful_results"] = accepted > 0
+            if accepted == 0 and not diagnostic.get("error"):
+                diagnostic["note"] = "A API respondeu, mas as páginas consultadas não continham avisos arqueológicos dentro dos filtros."
             diagnostics.append(diagnostic)
         except Exception as exc:
-            diagnostics.append({**diagnostic, "error": str(exc)})
+            diagnostics.append({**diagnostic, "returned_items": returned,
+                                "pages_checked": pages_checked, "error": str(exc)})
     return output
 
 
@@ -864,7 +900,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.9.0", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.9.1", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
@@ -895,7 +931,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.9.0", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.9.1", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -903,7 +939,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.9.0", "error": str(exc),
+        return {"ok": False, "version": "2.9.1", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
