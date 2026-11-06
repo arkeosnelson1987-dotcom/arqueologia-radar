@@ -631,7 +631,9 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
     except Exception as exc:
         diagnostics.append({**diagnostic, "error": str(exc)})
         return []
-        def query_secop(term, diagnostics=None, search_mode="direct"):
+
+
+def query_secop(term, diagnostics=None, search_mode="direct"):
     """Pesquisa SECOP II com os campos conhecidos e normalização de chaves/acentos."""
     if diagnostics is None:
         diagnostics = []
@@ -1032,7 +1034,9 @@ def deduplicate_results(results):
 
 def sort_results(results):
     return sorted(results, key=lambda item: (int(item.get("score", 0)), item.get("date", "")), reverse=True)
-    @app.get("/")
+
+
+@app.get("/")
 def index():
     return FileResponse(BASE_DIR / "index.html")
 
