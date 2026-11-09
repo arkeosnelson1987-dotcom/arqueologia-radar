@@ -1,16 +1,17 @@
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
+import json
 import re
 import time
 import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.4")
+app = FastAPI(title="Arqueologia Radar", version="2.9.5")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -20,6 +21,7 @@ TED_URL = "https://api.ted.europa.eu/v3/notices/search"
 WORLD_BANK_URL = "https://search.worldbank.org/api/v2/procnotices"
 SECOP_URL = "https://www.datos.gov.co/resource/p6dx-8zbt.json"
 PNCP_BASE_URL = "https://pncp.gov.br/api/consulta/v1"
+ECUADOR_API_URL = "https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/api/search_ocds"
 
 SOURCES = [
     {"name": "TED — Europa", "type": "api", "automatic": True, "url": "https://ted.europa.eu/"},
@@ -27,14 +29,14 @@ SOURCES = [
     {"name": "SECOP II — Colômbia", "type": "api", "automatic": True, "url": "https://www.datos.gov.co/"},
     {"name": "PNCP — Brasil", "type": "api", "automatic": True, "url": "https://pncp.gov.br/"},
     {"name": "South Africa eTenders", "type": "portal", "automatic": False, "url": "https://www.etenders.gov.za/"},
-    {"name": "African Development Bank", "type": "portal", "automatic": False, "url": "https://www.afdb.org/"},
+    {"name": "African Development Bank — Procurement Notices", "type": "portal", "automatic": False, "url": "https://www.afdb.org/en/projects-and-operations/procurement"},
     {"name": "SAM.gov", "type": "portal", "automatic": False, "url": "https://sam.gov/"},
     {"name": "BASE Portugal", "type": "portal", "automatic": False, "url": "https://www.base.gov.pt/"},
     {"name": "Espanha", "type": "portal", "automatic": False, "url": "https://contrataciondelestado.es/"},
     {"name": "UNDB", "type": "portal", "automatic": False, "url": "https://devbusiness.un.org/"},
     {"name": "UNGM", "type": "portal", "automatic": False, "url": "https://www.ungm.org/"},
-    {"name": "EBRD", "type": "portal", "automatic": False, "url": "https://www.ebrd.com/"},
-    {"name": "EIB", "type": "portal", "automatic": False, "url": "https://www.eib.org/"},
+    {"name": "EBRD — ECEPP Procurement Portal", "type": "portal", "automatic": False, "url": "https://ecepp.ebrd.com/"},
+    {"name": "EIB — Project Procurement", "type": "portal", "automatic": False, "url": "https://www.eib.org/en/about/procurement/project-procurement"},
     {"name": "Oman", "type": "portal", "automatic": False, "url": "https://etendering.tenderboard.gov.om/"},
     {"name": "Saudi Etimad", "type": "portal", "automatic": False, "url": "https://tenders.etimad.sa/"},
     {"name": "UAE", "type": "portal", "automatic": False, "url": "https://mof.gov.ae/"},
@@ -42,11 +44,11 @@ SOURCES = [
     {"name": "Morocco", "type": "portal", "automatic": False, "url": "https://www.marchespublics.gov.ma/"},
     {"name": "Uganda", "type": "portal", "automatic": False, "url": "https://www.ppda.go.ug/"},
     {"name": "Kenya", "type": "portal", "automatic": False, "url": "https://tenders.go.ke/"},
-    {"name": "Tanzania", "type": "portal", "automatic": False, "url": "https://www.ppra.go.tz/"},
+    {"name": "Tanzânia — NeST e-Procurement", "type": "portal", "automatic": False, "url": "https://nest.go.tz/"},
     {"name": "Mozambique", "type": "portal", "automatic": False, "url": "https://www.ufsa.gov.mz/"},
     {"name": "ChileCompra", "type": "portal", "automatic": False, "url": "https://www.mercadopublico.cl/"},
-    {"name": "IDB", "type": "portal", "automatic": False, "url": "https://www.iadb.org/"},
-    {"name": "ADB", "type": "portal", "automatic": False, "url": "https://www.adb.org/"},
+    {"name": "IDB — Procurement Notices", "type": "portal", "automatic": False, "url": "https://www.iadb.org/en/how-we-can-work-together/procurement/procurement-projects/procurement-notices"},
+    {"name": "ADB — Project Procurement Opportunities", "type": "portal", "automatic": False, "url": "https://www.adb.org/business/project-procurement/business-opportunities"},
     {"name": "AusTender", "type": "portal", "automatic": False, "url": "https://www.tenders.gov.au/"},
     {"name": "NZ GETS", "type": "portal", "automatic": False, "url": "https://www.gets.govt.nz/"},
     {"name": "Redeia", "type": "portal", "automatic": False, "url": "https://www.ree.es/"},
@@ -73,7 +75,7 @@ SOURCES = [
     {"name": "Sri Lanka — Government Procurement", "type": "portal", "automatic": False, "url": "https://www.promise.lk/"},
     {"name": "México — Compras MX", "type": "portal", "automatic": False, "url": "https://comprasmx.buengobierno.gob.mx/"},
     {"name": "Argentina — COMPR.AR", "type": "portal", "automatic": False, "url": "https://comprar.gob.ar/"},
-    {"name": "Peru — SEACE", "type": "portal", "automatic": False, "url": "https://www.gob.pe/osce"},
+    {"name": "Peru — SEACE (buscador público)", "type": "portal", "automatic": False, "url": "https://prod2.seace.gob.pe/seacebus-uiwd-pub/buscadorPublico/buscadorPublico.xhtml"},
     {"name": "Uruguai — Compras Estatales", "type": "portal", "automatic": False, "url": "https://www.comprasestatales.gub.uy/"},
     {"name": "Costa Rica — SICOP", "type": "portal", "automatic": False, "url": "https://www.sicop.go.cr/"},
     {"name": "Panamá — PanamaCompra", "type": "portal", "automatic": False, "url": "https://www.panamacompra.gob.pa/"},
@@ -111,7 +113,7 @@ SOURCES = [
     # Expansão mundial — novos portais oficiais nacionais (consulta manual)
     {"name": "Paraguai — DNCP / SICP", "type": "portal", "automatic": False, "url": "https://www.contrataciones.gov.py/"},
     {"name": "Bolívia — SICOES", "type": "portal", "automatic": False, "url": "https://www.sicoes.gob.bo/"},
-    {"name": "Equador — SERCOP / SOCE", "type": "portal", "automatic": False, "url": "https://www.compraspublicas.gob.ec/ProcesoContratacion/compras/"},
+    {"name": "Equador — SERCOP Contrataciones Abiertas OCDS", "type": "api", "automatic": True, "url": "https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/datos-abiertos/api"},
     {"name": "Guatemala — Guatecompras", "type": "portal", "automatic": False, "url": "https://www.guatecompras.gt/"},
     {"name": "Honduras — Honducompras", "type": "portal", "automatic": False, "url": "https://honducompras.gob.hn/"},
     {"name": "El Salvador — COMPRASAL", "type": "portal", "automatic": False, "url": "https://unac.mh.gob.sv/comprasalweb/"},
@@ -233,7 +235,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.4", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.5", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -815,6 +817,104 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
         return []
 
 
+
+def query_ecuador(term, diagnostics=None, search_mode="direct"):
+    """Consulta a API oficial OCDS do Equador por palavra-chave e ano."""
+    if diagnostics is None:
+        diagnostics = []
+
+    normalized = normalize_for_search(term)
+    if (normalized in {"", "archaeology", "archaeological", "arqueologia", "cultural heritage", "heritage"}
+            or "archaeolog" in normalized or "arqueolog" in normalized):
+        search_terms = ["arqueologia", "arqueologico", "arqueológica"]
+    else:
+        search_terms = [term]
+
+    output = []
+    today = date.today()
+    years = sorted({today.year, (today - timedelta(days=PERIOD_DAYS)).year})
+
+    for search_term in search_terms:
+        for year in years:
+            diagnostic = {
+                "source": "Equador — SERCOP Contrataciones Abiertas OCDS",
+                "term": search_term,
+                "year": year,
+                "method": "GET"
+            }
+            returned = 0
+            accepted = 0
+            pages_checked = 0
+            try:
+                for page in (1, 2):
+                    response = SESSION.get(
+                        ECUADOR_API_URL,
+                        params={"year": year, "search": search_term, "page": page},
+                        timeout=(8, 22)
+                    )
+                    diagnostic["status_code"] = response.status_code
+                    if response.status_code != 200:
+                        diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
+                        break
+
+                    payload = response.json()
+                    items = payload.get("data", []) if isinstance(payload, dict) else []
+                    if not isinstance(items, list):
+                        diagnostic["error"] = "Formato de resposta inesperado na API OCDS do Equador"
+                        break
+
+                    returned += len(items)
+                    pages_checked += 1
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        title = first_value(item, ["title", "tender_title", "name"])
+                        description = first_value(item, ["description", "tender_description", "objeto"])
+                        if not title:
+                            title = description
+                        buyer = first_value(item, ["buyerName", "buyer_name", "buyer"])
+                        if isinstance(buyer, dict):
+                            buyer = first_value(buyer, ["name", "legalName"])
+                        published = first_value(item, ["date", "publishedDate", "publication_date"])
+                        ocid = first_value(item, ["ocid", "id"])
+                        url = ("https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/api/record?ocid=" + str(ocid)) if ocid else "https://datosabiertos.compraspublicas.gob.ec/"
+                        searchable = normalize_for_search(f"{title or ''} {description or ''}")
+                        if not any(x in searchable for x in ("arqueologia", "arqueologico", "arqueologica", "arqueologicas", "arqueologicos")):
+                            continue
+                        result = make_result(title, description, buyer, "EC",
+                                             "Equador — SERCOP Contrataciones Abiertas OCDS",
+                                             url, published, "", [], search_mode)
+                        if not result:
+                            continue
+                        if result["date"] and not recent_enough(result["date"]):
+                            continue
+                        if not result["date"]:
+                            result["date_unconfirmed"] = True
+                            result["date_status"] = "Data de publicação desconhecida — confirmar no portal"
+                            result["score"] = max(20, result["score"] - 20)
+                        output.append(result)
+                        accepted += 1
+
+                    total_pages = payload.get("pages") if isinstance(payload, dict) else None
+                    try:
+                        if not items or (total_pages is not None and page >= int(total_pages)):
+                            break
+                    except (TypeError, ValueError):
+                        if not items:
+                            break
+
+            except Exception as exc:
+                diagnostic["error"] = str(exc)
+
+            diagnostic["returned_items"] = returned
+            diagnostic["pages_checked"] = pages_checked
+            diagnostic["accepted_results"] = accepted
+            diagnostic["useful_results"] = accepted > 0
+            diagnostics.append(diagnostic)
+
+    return output
+
+
 def query_brazil(term, diagnostics=None, search_mode="direct"):
     """Consulta o PNCP com páginas de 10 registos e paginação dinâmica."""
     if diagnostics is None:
@@ -1097,7 +1197,9 @@ def automatic_search(query, diagnostics, country_code=None):
     jobs = [(query_world_bank, term, mode) for term in wb_terms]
     jobs += [(query_secop, term, mode) for term in secop_terms]
     jobs += [(query_brazil, brazil_term, mode)]
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    if country_code in (None, "ECU"):
+        jobs += [(query_ecuador, brazil_term, mode)]
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(fn, term, diagnostics, job_mode) for fn, term, job_mode in jobs]
         for future in as_completed(futures):
             try:
@@ -1159,20 +1261,26 @@ def manifest():
     return FileResponse(BASE_DIR / "manifest.json", media_type="application/json")
 
 
+def json_ascii_response(payload):
+    # Escapes non-ASCII characters so names with accents remain readable even
+    # in clients that mis-detect the JSON response encoding.
+    return Response(content=json.dumps(payload, ensure_ascii=False), media_type="application/json; charset=utf-8")
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.9.4", "sources": len(SOURCES),
+    return json_ascii_response({"ok": True, "version": "2.9.5", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
-            "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES}
+            "ted_fast_terms": FAST_TED_TERMS, "pncp_modalities": PNCP_MODALITIES})
 
 
 @app.get("/api/sources")
 def api_sources():
-    return {"sources": SOURCES, "count": len(SOURCES),
+    return json_ascii_response({"sources": SOURCES, "count": len(SOURCES),
             "automatic": sum(1 for source in SOURCES if source.get("automatic")),
-            "manual": sum(1 for source in SOURCES if not source.get("automatic"))}
+            "manual": sum(1 for source in SOURCES if not source.get("automatic"))})
 
 
 @app.get("/api/search")
@@ -1192,21 +1300,21 @@ def api_search(q: str = Query(default="archaeology"),
         results = sort_results(results)
         source_names = sorted({repair_mojibake(item.get("source", "")) for item in results if item.get("source")})
         regions = sorted({repair_mojibake(item.get("region", "")) for item in results if item.get("region")})
-        automatic_source_names = {"TED — Europa", "World Bank Procurement", "SECOP II — Colômbia", "PNCP — Brasil"}
+        automatic_source_names = {"TED — Europa", "World Bank Procurement", "SECOP II — Colômbia", "PNCP — Brasil", "Equador — SERCOP Contrataciones Abiertas OCDS"}
         successful_diagnostics = [d for d in diagnostics if d.get("status_code") == 200]
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.9.4", "query": q, "mode": mode,
+        return json_ascii_response({"ok": True, "version": "2.9.5", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
                 "automatic_sources_count": len(consulted_automatic_sources),
                 "automatic_sources_failed": failed_automatic_sources,
-                "automatic_sources_failed_count": len(failed_automatic_sources)}
+                "automatic_sources_failed_count": len(failed_automatic_sources)})
     except Exception as exc:
-        return {"ok": False, "version": "2.9.4", "error": str(exc),
-                "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
+        return json_ascii_response({"ok": False, "version": "2.9.5", "error": str(exc),
+                "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics})
 
 
 @app.get("/api/test-ted-minimal")
