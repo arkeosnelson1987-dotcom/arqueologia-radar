@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.2")
+app = FastAPI(title="Arqueologia Radar", version="2.9.3")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -202,7 +202,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.2", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.3", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -566,8 +566,24 @@ def query_ted(term, diagnostics=None, search_mode="direct", country_code=None):
         return []
 
 
+def _world_bank_scalar_fields(data, prefix=""):
+    """Recolhe campos escalares da resposta do Banco Mundial, incluindo estruturas aninhadas."""
+    found = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, (dict, list)):
+                found.extend(_world_bank_scalar_fields(value, path))
+            elif value not in (None, ""):
+                found.append((path.lower(), normalize_text(value)))
+    elif isinstance(data, list):
+        for index, value in enumerate(data):
+            found.extend(_world_bank_scalar_fields(value, f"{prefix}[{index}]"))
+    return found
+
+
 def query_world_bank(term, diagnostics=None, search_mode="direct"):
-    """Consulta a API oficial de avisos de contratação do Banco Mundial."""
+    """Consulta avisos do Banco Mundial e tolera variações nos nomes dos campos."""
     if diagnostics is None:
         diagnostics = []
     diagnostic = {"source": "World Bank Procurement", "term": term, "method": "GET"}
@@ -582,11 +598,11 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
             diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
             diagnostics.append(diagnostic)
             return []
+
         payload = response.json()
         notices = (payload.get("procnotices") or payload.get("procurements") or
                    payload.get("notices") or payload.get("results") or payload.get("data") or [])
         if isinstance(notices, dict):
-            # A API oficial devolve frequentemente procnotices como objecto indexado pelo ID.
             nested = (notices.get("procnotice") or notices.get("procurement") or
                       notices.get("notice") or notices.get("results"))
             notices = nested if nested is not None else list(notices.values())
@@ -594,44 +610,101 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
             notices = list(notices.values())
         if not isinstance(notices, list):
             notices = []
+
         diagnostic["response_keys"] = list(payload.keys()) if isinstance(payload, dict) else []
+        diagnostic["sample_item_keys"] = list(notices[0].keys())[:35] if notices and isinstance(notices[0], dict) else []
         output = []
+        missing_date = 0
+        missing_title = 0
         for item in notices:
             if not isinstance(item, dict):
                 continue
-            # Nomes de campo documentados no conjunto oficial Procurement Notice.
-            title = first_value(item, ["bid_description", "title", "notice_title",
-                                       "project_name", "procurement_name", "contract_description"])
-            description = first_value(item, ["bid_description", "description", "short_description",
-                                             "procurement_description", "contract_description"])
-            buyer = first_value(item, ["contact_organization", "borrower", "buyer", "client",
-                                       "country_name", "country"])
-            country = first_value(item, ["country_code", "countrycode", "country_name", "country"])
-            published = first_value(item, ["publication_date", "notice_date", "published_date",
-                                           "noticedate", "date"])
-            deadline = first_value(item, ["deadline_date", "submission_deadline_date",
-                                          "submission_deadline", "bid_deadline", "deadline"])
+
+            title = first_value(item, [
+                "bid_description", "title", "notice_title", "procurement_title",
+                "project_name", "procurement_name", "contract_description",
+                "notice_description", "description"
+            ])
+            description = first_value(item, [
+                "description", "short_description", "procurement_description",
+                "contract_description", "bid_description", "notice_description",
+                "project_description", "scope_of_work", "goods_services"
+            ])
+            buyer = first_value(item, [
+                "contact_organization", "borrower", "buyer", "client",
+                "implementing_agency", "organization", "agency"
+            ])
+            country = first_value(item, [
+                "country_code", "countrycode", "country_name", "borrower_country",
+                "project_country", "country"
+            ])
+            published = first_value(item, [
+                "publication_date", "notice_date", "published_date", "noticedate",
+                "submission_date", "created_date", "date_published", "date"
+            ])
+            deadline = first_value(item, [
+                "deadline_date", "submission_deadline_date", "submission_deadline",
+                "bid_deadline", "deadline", "closing_date"
+            ])
             url = first_value(item, ["url", "source_url", "notice_url", "procurement_url", "link"])
-            if not url:
-                notice_id = first_value(item, ["id", "notice_id"])
-                if notice_id:
-                    url = f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{notice_id}"
+            notice_id = first_value(item, ["id", "notice_id", "procurement_id"])
+            if not url and notice_id:
+                url = f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{notice_id}"
             cpvs = cpv_values(first_value(item, ["cpv", "cpvs", "classification"]))
-            result = make_result(title, description, buyer, country, "World Bank Procurement",
-                                 url, published, deadline, cpvs, search_mode)
-            if result and recent_enough(result["date"]):
-                output.append(result)
+
+            # A API muda ocasionalmente os nomes dos campos. Se os campos conhecidos
+            # não existirem, procura texto em campos cujo nome sugira título/descrição.
+            scalar_fields = _world_bank_scalar_fields(item)
+            if not title:
+                candidates = [value for key, value in scalar_fields
+                              if any(word in key for word in ("title", "description", "procurement", "bid", "project"))]
+                if not candidates:
+                    term_norm = normalize_for_search(term)
+                    candidates = [value for _, value in scalar_fields
+                                  if term_norm and term_norm in normalize_for_search(value)]
+                title = max(candidates, key=len) if candidates else ""
+            if not description:
+                description = " ".join(value for key, value in scalar_fields
+                                        if any(word in key for word in ("description", "scope", "detail")))
+            if not country:
+                country = first_value(item, ["country", "country_name", "borrower_country", "project_country"])
+
+            if not title and not description:
+                missing_title += 1
+                continue
+
+            result = make_result(title, description, buyer, country,
+                                 "World Bank Procurement", url, published,
+                                 deadline, cpvs, search_mode)
+            if not result:
+                continue
+
+            if result["date"] and not recent_enough(result["date"]):
+                continue
+            if not result["date"]:
+                # Não descartar avisos relevantes apenas porque o fornecedor omitiu
+                # a data no campo esperado; assinalar claramente a data por confirmar.
+                missing_date += 1
+                result["date_unconfirmed"] = True
+                result["date_status"] = "Data de publicação desconhecida — confirmar no portal"
+                result["score"] = max(25, result["score"] - 15)
+            output.append(result)
+
         diagnostic["returned_items"] = len(notices)
         diagnostic["accepted_results"] = len(output)
+        diagnostic["unknown_date_results"] = missing_date
+        diagnostic["items_without_title_or_description"] = missing_title
         diagnostic["useful_results"] = len(output) > 0
         if not output:
-            diagnostic["note"] = "A API respondeu, mas nenhum aviso passou os filtros de relevância e data; verificar os campos e a pesquisa por termo."
+            diagnostic["note"] = (
+                "A API respondeu, mas não foi possível identificar avisos relevantes "
+                "nos campos devolvidos; verificar a estrutura da resposta."
+            )
         diagnostics.append(diagnostic)
         return output
     except Exception as exc:
         diagnostics.append({**diagnostic, "error": str(exc)})
         return []
-
 
 def query_secop(term, diagnostics=None, search_mode="direct"):
     """Pesquisa SECOP II com os campos conhecidos e normalização de chaves/acentos."""
@@ -730,9 +803,11 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
         search_terms = [normalized_term]
 
     PNCP_PAGE_SIZE = 10
-    PNCP_MAX_PAGES = 10
+    PNCP_MAX_PAGES = 2
 
-    for modality in PNCP_MODALITIES:
+    for modality_index, modality in enumerate(PNCP_MODALITIES):
+        if modality_index:
+            time.sleep(1.2)
         diagnostic = {
             "source": "PNCP — Brasil",
             "term": term,
@@ -747,6 +822,8 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
 
         try:
             for page in range(1, PNCP_MAX_PAGES + 1):
+                if pages_checked:
+                    time.sleep(0.6)
                 params = {
                     "dataInicial": cutoff_date().strftime("%Y%m%d"),
                     "dataFinal": date.today().strftime("%Y%m%d"),
@@ -1053,7 +1130,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.9.2", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.9.3", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
@@ -1076,15 +1153,20 @@ def api_search(q: str = Query(default="archaeology"),
         mode, results = automatic_search(q, diagnostics, iso3 or None)
         results = deduplicate_results(results)
         results = filter_results(results, country, region)
+        # Última camada de reparação para garantir que a resposta JSON sai em UTF-8 legível.
+        for item in results:
+            for field in ("title", "description", "buyer", "country", "region", "source", "url", "date_status"):
+                if isinstance(item.get(field), str):
+                    item[field] = repair_mojibake(item[field])
         results = sort_results(results)
-        source_names = sorted({item.get("source", "") for item in results if item.get("source")})
-        regions = sorted({item.get("region", "") for item in results if item.get("region")})
+        source_names = sorted({repair_mojibake(item.get("source", "")) for item in results if item.get("source")})
+        regions = sorted({repair_mojibake(item.get("region", "")) for item in results if item.get("region")})
         automatic_source_names = {"TED — Europa", "World Bank Procurement", "SECOP II — Colômbia", "PNCP — Brasil"}
         successful_diagnostics = [d for d in diagnostics if d.get("status_code") == 200]
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.9.2", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.9.3", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -1092,7 +1174,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.9.2", "error": str(exc),
+        return {"ok": False, "version": "2.9.3", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
