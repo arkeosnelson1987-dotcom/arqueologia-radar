@@ -10,7 +10,7 @@ import unicodedata
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.3")
+app = FastAPI(title="Arqueologia Radar", version="2.9.4")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -108,7 +108,38 @@ SOURCES = [
     {"name": "Israel — Government Procurement Administration", "type": "portal", "automatic": False, "url": "https://mr.gov.il/"},
     {"name": "Turquia — EKAP", "type": "portal", "automatic": False, "url": "https://ekap.kik.gov.tr/"},
     {"name": "Chipre — eProcurement", "type": "portal", "automatic": False, "url": "https://www.eprocurement.gov.cy/"},
+    # Expansão mundial — novos portais oficiais nacionais (consulta manual)
+    {"name": "Paraguai — DNCP / SICP", "type": "portal", "automatic": False, "url": "https://www.contrataciones.gov.py/"},
+    {"name": "Bolívia — SICOES", "type": "portal", "automatic": False, "url": "https://www.sicoes.gob.bo/"},
+    {"name": "Equador — SERCOP / SOCE", "type": "portal", "automatic": False, "url": "https://www.compraspublicas.gob.ec/ProcesoContratacion/compras/"},
+    {"name": "Guatemala — Guatecompras", "type": "portal", "automatic": False, "url": "https://www.guatecompras.gt/"},
+    {"name": "Honduras — Honducompras", "type": "portal", "automatic": False, "url": "https://honducompras.gob.hn/"},
+    {"name": "El Salvador — COMPRASAL", "type": "portal", "automatic": False, "url": "https://unac.mh.gob.sv/comprasalweb/"},
+    {"name": "República Dominicana — DataCompras / DGCP", "type": "portal", "automatic": False, "url": "https://datosabiertos.dgcp.gob.do/"},
+    {"name": "Nicarágua — SISCAE / NicaraguaCompra", "type": "portal", "automatic": False, "url": "https://www.gestion.nicaraguacompra.gob.ni/"},
+    {"name": "Trindade e Tobago — ProcureTT", "type": "portal", "automatic": False, "url": "https://procurett.oprtt.org/"},
+    {"name": "Tunísia — TUNEPS", "type": "portal", "automatic": False, "url": "https://www.tuneps.tn/"},
+    {"name": "Costa do Marfim — SIGOMAP", "type": "portal", "automatic": False, "url": "https://www.sigomap.gouv.ci/"},
+    {"name": "Camarões — ARMP / Marchés Publics", "type": "portal", "automatic": False, "url": "https://armp.cm/public/"},
+    {"name": "Zimbabué — PRAZ eGP", "type": "portal", "automatic": False, "url": "https://www.praz.org.zw/egp/"},
+    {"name": "Angola — Portal de Compras Públicas", "type": "portal", "automatic": False, "url": "https://compraspublicas.minfin.gov.ao/ComprasPublicas/"},
+    {"name": "Vietname — VNEPS", "type": "portal", "automatic": False, "url": "https://muasamcong.mof.gov.vn/en/"},
+    {"name": "Nepal — National e-GP", "type": "portal", "automatic": False, "url": "https://beta.bolpatra.gov.np/"},
+    {"name": "Etiópia — Electronic Government Procurement", "type": "portal", "automatic": False, "url": "https://egp.gov.et/"},
+    {"name": "Hong Kong — Procurement and Contract Management System", "type": "portal", "automatic": False, "url": "https://pcms2.gld.gov.hk/"},
+    {"name": "Brunei — State Tender Board / Pelita Brunei", "type": "portal", "automatic": False, "url": "https://www.mof.gov.bn/divisions/state-tender-board-downloads.aspx"},
+    {"name": "Tailândia — e-GP", "type": "portal", "automatic": False, "url": "https://www.gprocurement.go.th/new_index.html"},
 ]
+
+# Remove repeated portal URLs so each official source appears only once in the catalogue.
+_seen_source_urls = set()
+_unique_sources = []
+for _source in SOURCES:
+    _source_url = _source.get("url", "").rstrip("/").lower()
+    if _source_url and _source_url not in _seen_source_urls:
+        _seen_source_urls.add(_source_url)
+        _unique_sources.append(_source)
+SOURCES = _unique_sources
 
 DIRECT_TERMS = [
     "archaeology", "archaeological", "archaeologist", "archaeologists",
@@ -173,7 +204,7 @@ COUNTRY_MAP = {
 "GT":"Guatemala","DO":"República Dominicana","JM":"Jamaica","VE":"Venezuela","GY":"Guiana",
 "SR":"Suriname","KZ":"Cazaquistão","UZ":"Uzbequistão","AZ":"Azerbaijão","GE":"Geórgia","AM":"Arménia",
 "IL":"Israel","JO":"Jordânia","LB":"Líbano","IQ":"Iraque","IR":"Irão","KW":"Kuwait","BH":"Barém",
-"FJ":"Fiji","PG":"Papua-Nova Guiné"
+"FJ":"Fiji","PG":"Papua-Nova Guiné","NI":"Nicarágua","TT":"Trindade e Tobago","HK":"Hong Kong","BN":"Brunei"
 }
 ISO3_MAP = {
 "PT":"PRT","ES":"ESP","FR":"FRA","DE":"DEU","IT":"ITA","NL":"NLD","BE":"BEL","LU":"LUX","IE":"IRL",
@@ -189,20 +220,20 @@ ISO3_MAP = {
 "MM":"MMR","CI":"CIV","CM":"CMR","AO":"AGO","ZW":"ZWE","ZM":"ZMB","BW":"BWA","NA":"NAM",
 "RW":"RWA","CD":"COD","CR":"CRI","PA":"PAN","GT":"GTM","DO":"DOM","JM":"JAM","VE":"VEN",
 "GY":"GUY","SR":"SUR","KZ":"KAZ","UZ":"UZB","AZ":"AZE","GE":"GEO","AM":"ARM","IL":"ISR",
-"JO":"JOR","LB":"LBN","IQ":"IRQ","IR":"IRN","KW":"KWT","BH":"BHR","FJ":"FJI","PG":"PNG"
+"JO":"JOR","LB":"LBN","IQ":"IRQ","IR":"IRN","KW":"KWT","BH":"BHR","FJ":"FJI","PG":"PNG","NI":"NIC","TT":"TTO","HK":"HKG","BN":"BRN"
 }
 REGION_COUNTRIES = {
 "Europa":{"PT","ES","FR","DE","IT","NL","BE","LU","IE","GB","UK","CH","AT","PL","CZ","SK","HU","RO","BG","GR","HR","SI","SE","NO","DK","FI","EE","LV","LT","MT","CY","IS","TR","UA","RU"},
 "África":{"MA","DZ","TN","EG","ZA","KE","UG","TZ","MZ","GH","NG","SN","ET","CI","CM","AO","ZW","ZM","BW","NA","RW","CD"},
-"América":{"US","CA","MX","BR","AR","CL","CO","PE","UY","PY","BO","EC","CR","PA","GT","DO","JM","VE","GY","SR"},
-"Ásia":{"CN","JP","KR","IN","ID","MY","TH","VN","PH","SA","AE","QA","OM","PK","BD","LK","NP","KH","LA","MM","KZ","UZ","AZ","GE","AM","IL","JO","LB","IQ","IR","KW","BH"},
-"Oceania":{"AU","NZ","FJ","PG"}
+"América":{"US","CA","MX","BR","AR","CL","CO","PE","UY","PY","BO","EC","CR","PA","GT","DO","JM","VE","GY","SR","NI","TT"},
+"Ásia":{"CN","JP","KR","IN","ID","MY","TH","VN","PH","SA","AE","QA","OM","PK","BD","LK","NP","KH","LA","MM","KZ","UZ","AZ","GE","AM","IL","JO","LB","IQ","IR","KW","BH","HK"},
+"Oceania":{"AU","NZ","FJ","PG","BN"}
 }
 TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-name",
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.3", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.4", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -1130,7 +1161,7 @@ def manifest():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "2.9.3", "sources": len(SOURCES),
+    return {"ok": True, "version": "2.9.4", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
@@ -1166,7 +1197,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return {"ok": True, "version": "2.9.3", "query": q, "mode": mode,
+        return {"ok": True, "version": "2.9.4", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -1174,7 +1205,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)}
     except Exception as exc:
-        return {"ok": False, "version": "2.9.3", "error": str(exc),
+        return {"ok": False, "version": "2.9.4", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics}
 
 
