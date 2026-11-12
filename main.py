@@ -12,7 +12,7 @@ import requests
 import threading
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.6")
+app = FastAPI(title="Arqueologia Radar", version="2.9.7")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -191,6 +191,15 @@ PNCP_COOLDOWN_SECONDS = 900
 PNCP_COOLDOWN_UNTIL = 0.0
 PNCP_COOLDOWN_LOCK = threading.Lock()
 
+# Proteção da API do Equador contra excesso de pedidos (HTTP 429).
+# Mantém pelo menos 3 segundos entre pedidos e suspende novas consultas
+# durante 15 minutos depois de uma resposta 429.
+ECUADOR_REQUEST_INTERVAL = 3.0
+ECUADOR_COOLDOWN_SECONDS = 900
+ECUADOR_LAST_REQUEST_AT = 0.0
+ECUADOR_COOLDOWN_UNTIL = 0.0
+ECUADOR_REQUEST_LOCK = threading.Lock()
+
 COUNTRY_MAP = {
 "PT":"Portugal","ES":"Espanha","FR":"França","DE":"Alemanha","IT":"Itália","NL":"Países Baixos",
 "BE":"Bélgica","LU":"Luxemburgo","IE":"Irlanda","GB":"Reino Unido","UK":"Reino Unido","CH":"Suíça",
@@ -240,7 +249,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.6", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.7", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -891,8 +900,32 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
 
 
 
+def _ecuador_get(params):
+    """Executa um pedido ao SERCOP com espaçamento e bloqueio global."""
+    global ECUADOR_LAST_REQUEST_AT, ECUADOR_COOLDOWN_UNTIL
+    with ECUADOR_REQUEST_LOCK:
+        now = time.monotonic()
+        remaining = ECUADOR_COOLDOWN_UNTIL - now
+        if remaining > 0:
+            return None, remaining
+
+        wait_for = ECUADOR_REQUEST_INTERVAL - (now - ECUADOR_LAST_REQUEST_AT)
+        if wait_for > 0:
+            time.sleep(wait_for)
+
+        response = SESSION.get(
+            ECUADOR_API_URL,
+            params=params,
+            timeout=(8, 22)
+        )
+        ECUADOR_LAST_REQUEST_AT = time.monotonic()
+        if response.status_code == 429:
+            ECUADOR_COOLDOWN_UNTIL = time.monotonic() + ECUADOR_COOLDOWN_SECONDS
+        return response, 0.0
+
+
 def query_ecuador(term, diagnostics=None, search_mode="direct"):
-    """Consulta a API oficial OCDS do Equador por palavra-chave e ano."""
+    """Consulta a API oficial OCDS do Equador sem exceder os limites do servidor."""
     if diagnostics is None:
         diagnostics = []
 
@@ -906,8 +939,11 @@ def query_ecuador(term, diagnostics=None, search_mode="direct"):
     output = []
     today = date.today()
     years = sorted({today.year, (today - timedelta(days=PERIOD_DAYS)).year})
+    stop_all = False
 
     for search_term in search_terms:
+        if stop_all:
+            break
         for year in years:
             diagnostic = {
                 "source": "Equador — SERCOP Contrataciones Abiertas OCDS",
@@ -919,13 +955,25 @@ def query_ecuador(term, diagnostics=None, search_mode="direct"):
             accepted = 0
             pages_checked = 0
             try:
-                for page in (1, 2):
-                    response = SESSION.get(
-                        ECUADOR_API_URL,
-                        params={"year": year, "search": search_term, "page": page},
-                        timeout=(8, 22)
+                # Uma página por combinação termo/ano nesta fase: reduz a carga
+                # sem alterar a validação local dos registos recebidos.
+                for page in (1,):
+                    response, cooldown_remaining = _ecuador_get(
+                        {"year": year, "search": search_term, "page": page}
                     )
+                    if response is None:
+                        diagnostic["skipped_due_to_cooldown"] = True
+                        diagnostic["cooldown_remaining_seconds"] = int(cooldown_remaining)
+                        diagnostic["note"] = "Consulta adiada para respeitar o limite temporário da API do Equador."
+                        stop_all = True
+                        break
+
                     diagnostic["status_code"] = response.status_code
+                    if response.status_code == 429:
+                        diagnostic["error"] = "HTTP 429: limite de pedidos atingido; consultas suspensas durante 15 minutos."
+                        diagnostic["cooldown_seconds"] = ECUADOR_COOLDOWN_SECONDS
+                        stop_all = True
+                        break
                     if response.status_code != 200:
                         diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:250]}"
                         break
@@ -968,22 +1016,23 @@ def query_ecuador(term, diagnostics=None, search_mode="direct"):
                         output.append(result)
                         accepted += 1
 
-                    total_pages = payload.get("pages") if isinstance(payload, dict) else None
-                    try:
-                        if not items or (total_pages is not None and page >= int(total_pages)):
-                            break
-                    except (TypeError, ValueError):
-                        if not items:
-                            break
+                diagnostic["returned_items"] = returned
+                diagnostic["pages_checked"] = pages_checked
+                diagnostic["accepted_results"] = accepted
+                diagnostic["useful_results"] = accepted > 0
+                if not diagnostic.get("error") and not diagnostic.get("skipped_due_to_cooldown") and not accepted:
+                    diagnostic["note"] = "A API respondeu, mas não devolveu resultados arqueológicos nesta página."
+                diagnostics.append(diagnostic)
 
             except Exception as exc:
+                diagnostic["returned_items"] = returned
+                diagnostic["pages_checked"] = pages_checked
+                diagnostic["accepted_results"] = accepted
                 diagnostic["error"] = str(exc)
+                diagnostics.append(diagnostic)
 
-            diagnostic["returned_items"] = returned
-            diagnostic["pages_checked"] = pages_checked
-            diagnostic["accepted_results"] = accepted
-            diagnostic["useful_results"] = accepted > 0
-            diagnostics.append(diagnostic)
+            if stop_all:
+                break
 
     return output
 
@@ -1362,7 +1411,7 @@ def json_ascii_response(payload):
 
 @app.get("/health")
 def health():
-    return json_ascii_response({"ok": True, "version": "2.9.6", "sources": len(SOURCES),
+    return json_ascii_response({"ok": True, "version": "2.9.7", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
@@ -1398,7 +1447,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return json_ascii_response({"ok": True, "version": "2.9.6", "query": q, "mode": mode,
+        return json_ascii_response({"ok": True, "version": "2.9.7", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -1406,7 +1455,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)})
     except Exception as exc:
-        return json_ascii_response({"ok": False, "version": "2.9.6", "error": str(exc),
+        return json_ascii_response({"ok": False, "version": "2.9.7", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics})
 
 
