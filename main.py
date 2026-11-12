@@ -9,9 +9,10 @@ import re
 import time
 import unicodedata
 import requests
+import threading
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Arqueologia Radar", version="2.9.5")
+app = FastAPI(title="Arqueologia Radar", version="2.9.6")
 
 REQUEST_TIMEOUT = 20
 PERIOD_DAYS = 365
@@ -185,6 +186,10 @@ BRAZIL_TERMS = ["arqueologia", "arqueológico", "arqueológica", "arqueológicos
 # PNCP exige o código de modalidade na consulta por publicação. Códigos válidos
 # mais comuns; a consulta é executada uma vez por modalidade e os resultados são filtrados localmente.
 PNCP_MODALITIES = [1, 3]
+# Evita repetir pedidos ao PNCP durante 15 minutos após um HTTP 429.
+PNCP_COOLDOWN_SECONDS = 900
+PNCP_COOLDOWN_UNTIL = 0.0
+PNCP_COOLDOWN_LOCK = threading.Lock()
 
 COUNTRY_MAP = {
 "PT":"Portugal","ES":"Espanha","FR":"França","DE":"Alemanha","IT":"Itália","NL":"Países Baixos",
@@ -235,7 +240,7 @@ TED_FIELDS = ["publication-number", "publication-date", "notice-title", "buyer-n
               "organisation-country-buyer", "buyer-country", "classification-cpv",
               "description-proc", "description-glo", "deadline-date-lot"]
 SESSION = requests.Session()
-SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.5", "Accept": "application/json"})
+SESSION.headers.update({"User-Agent": "ArqueologiaRadar/2.9.6", "Accept": "application/json"})
 
 
 def flatten_values(value):
@@ -334,32 +339,71 @@ def repair_mojibake(value):
 
 
 def parse_date(value):
-    if value is None:
+    if value is None or value == "":
         return None
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
         return value
-    text = str(value).strip().replace(" ", "")
+
+    # Algumas APIs devolvem datas como timestamp Unix (segundos ou milissegundos).
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            number = float(value)
+            if number >= 100000000000:  # milissegundos
+                number /= 1000.0
+            if number >= 1000000000:
+                return datetime.fromtimestamp(number, tz=__import__("datetime").timezone.utc).date()
+            if number.is_integer() and len(str(int(number))) == 8:
+                return datetime.strptime(str(int(number)), "%Y%m%d").date()
+        except (ValueError, TypeError, OverflowError, OSError):
+            return None
+
+    text = str(value).strip()
     if not text:
         return None
-    for fmt in ("%Y-%m-%d", "%Y-%m-%d+%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ",
-                "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%fZ", "%d/%m/%Y", "%Y/%m/%d", "%Y%m%d"):
+    # Valores numéricos em texto: AAAAMMDD ou timestamp Unix.
+    if re.fullmatch(r"\d{8}", text):
         try:
-            return datetime.strptime(text, fmt).date()
+            return datetime.strptime(text, "%Y%m%d").date()
+        except ValueError:
+            pass
+    if re.fullmatch(r"\d{10,13}(?:\.0+)?", text):
+        try:
+            number = float(text)
+            if number >= 100000000000:
+                number /= 1000.0
+            return datetime.fromtimestamp(number, tz=__import__("datetime").timezone.utc).date()
+        except (ValueError, TypeError, OverflowError, OSError):
+            pass
+
+    # Não remover espaços antes de interpretar datas ISO com hora.
+    candidates = [text, text.replace(" ", "T", 1) if " " in text else text]
+    formats = (
+        "%Y-%m-%d", "%Y-%m-%d+%H:%M", "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%z", "%d/%m/%Y", "%d-%m-%Y",
+        "%m/%d/%Y", "%Y/%m/%d", "%Y%m%d",
+    )
+    for candidate in candidates:
+        for fmt in formats:
+            try:
+                return datetime.strptime(candidate, fmt).date()
+            except (ValueError, TypeError):
+                continue
+        try:
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00")).date()
         except (ValueError, TypeError):
-            continue
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
-    except (ValueError, TypeError):
-        # Algumas respostas TED usam AAAA-MM-DD+HH:MM sem separador T.
-        match = re.match(r"^(\d{4}-\d{2}-\d{2})(?:[+-]\d{2}:?\d{2})?$", text)
+            pass
+        # Algumas respostas usam AAAA-MM-DD+02:00 sem separador T.
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})(?:[+-]\d{2}:?\d{2})?$", candidate)
         if match:
             try:
                 return date.fromisoformat(match.group(1))
             except ValueError:
                 pass
-        return None
+    return None
 
 
 def cutoff_date():
@@ -646,6 +690,13 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
 
         diagnostic["response_keys"] = list(payload.keys()) if isinstance(payload, dict) else []
         diagnostic["sample_item_keys"] = list(notices[0].keys())[:35] if notices and isinstance(notices[0], dict) else []
+        diagnostic["sample_date_fields"] = []
+        for sample in notices[:3]:
+            if isinstance(sample, dict):
+                diagnostic["sample_date_fields"].append({
+                    str(key): value for key, value in sample.items()
+                    if "date" in str(key).lower() or "time" in str(key).lower()
+                })
         output = []
         missing_date = 0
         missing_title = 0
@@ -673,7 +724,9 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
             ])
             published = first_value(item, [
                 "publication_date", "notice_date", "published_date", "noticedate",
-                "submission_date", "created_date", "date_published", "date"
+                "submission_date", "created_date", "date_published", "date",
+                "noticeDate", "publishedDate", "publicationDate", "publish_date",
+                "createdOn", "date_created", "noticePublicationDate"
             ])
             deadline = first_value(item, [
                 "deadline_date", "submission_deadline_date", "submission_deadline",
@@ -688,6 +741,10 @@ def query_world_bank(term, diagnostics=None, search_mode="direct"):
             # A API muda ocasionalmente os nomes dos campos. Se os campos conhecidos
             # não existirem, procura texto em campos cujo nome sugira título/descrição.
             scalar_fields = _world_bank_scalar_fields(item)
+            if not parse_date(published):
+                date_values = [value for key, value in scalar_fields
+                               if any(token in key for token in ("date", "noticedate", "published", "created"))]
+                published = next((value for value in date_values if parse_date(value)), published)
             if not title:
                 candidates = [value for key, value in scalar_fields
                               if any(word in key for word in ("title", "description", "procurement", "bid", "project"))]
@@ -745,8 +802,13 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
         diagnostics = []
     diagnostic = {"source": "SECOP II — Colômbia", "term": term, "method": "GET"}
     try:
-        response = SESSION.get(SECOP_URL, params={"$limit": 1000, "$q": term}, timeout=(5, 18))
+        response = SESSION.get(SECOP_URL, params={"$limit": 500, "$q": term}, timeout=(5, 18))
         diagnostic["status_code"] = response.status_code
+        if response.status_code in (500, 502, 503, 504):
+            diagnostic["retry"] = "Uma repetição após erro temporário do servidor"
+            time.sleep(1.0)
+            response = SESSION.get(SECOP_URL, params={"$limit": 500, "$q": term}, timeout=(5, 18))
+            diagnostic["retry_status_code"] = response.status_code
         if response.status_code != 200:
             diagnostic["error"] = f"HTTP {response.status_code}: {response.text[:300]}"
             diagnostics.append(diagnostic)
@@ -786,7 +848,13 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
                 "nombre_entidad_compradora", "razon_social", "buyer"])
             published = first_value(item, ["fecha_de_publicacion", "fecha_publicacion",
                 "fecha_de_ultima_publicacion", "fecha_de_publicacion_del_proceso",
-                "fecha_publicacion_proceso", "fecha_de_publicacion_del_proceso"])
+                "fecha_publicacion_proceso", "fecha_de_publicacion_del_proceso",
+                "fecha_publicacion_proceso", "fecha_creacion", "fecha_de_creacion",
+                "published_date", "publication_date", "created_at"])
+            if not parse_date(published):
+                date_values = [value for key, value in _world_bank_scalar_fields(item)
+                               if "fecha" in key or "date" in key or "created" in key]
+                published = next((value for value in date_values if parse_date(value)), published)
             deadline = first_value(item, ["fecha_de_recepcion_de_respuestas", "fecha_de_cierre",
                 "fecha_cierre", "fecha_de_fin", "fecha_de_presentacion_de_ofertas"])
             url = first_value(item, ["urlproceso", "url", "url_del_proceso", "enlace_proceso",
@@ -804,6 +872,11 @@ def query_secop(term, diagnostics=None, search_mode="direct"):
                 result["date_unconfirmed"] = True
                 output.append(result)
         diagnostic["returned_items"] = len(payload)
+        diagnostic["sample_date_fields"] = [
+            {str(key): value for key, value in item.items()
+             if "fecha" in str(key).lower() or "date" in str(key).lower()}
+            for item in payload[:3] if isinstance(item, dict)
+        ]
         diagnostic["accepted_results"] = len(output)
         diagnostic["unknown_date_results"] = sum(1 for item in output if item.get("date_unconfirmed"))
         diagnostic["relevance_terms"] = len(secop_terms)
@@ -916,9 +989,20 @@ def query_ecuador(term, diagnostics=None, search_mode="direct"):
 
 
 def query_brazil(term, diagnostics=None, search_mode="direct"):
-    """Consulta o PNCP com páginas de 10 registos e paginação dinâmica."""
+    """Consulta o PNCP com proteção contra limites temporários de pedidos."""
+    global PNCP_COOLDOWN_UNTIL
     if diagnostics is None:
         diagnostics = []
+
+    with PNCP_COOLDOWN_LOCK:
+        remaining = PNCP_COOLDOWN_UNTIL - time.monotonic()
+    if remaining > 0:
+        diagnostics.append({
+            "source": "PNCP — Brasil", "term": term, "method": "GET",
+            "skipped_due_to_rate_limit": True,
+            "note": f"Consulta adiada devido a HTTP 429 anterior; nova tentativa em aproximadamente {int(remaining)} segundos."
+        })
+        return []
 
     output = []
     normalized_term = normalize_for_search(term)
@@ -936,6 +1020,7 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
     PNCP_PAGE_SIZE = 10
     PNCP_MAX_PAGES = 2
 
+    rate_limited = False
     for modality_index, modality in enumerate(PNCP_MODALITIES):
         if modality_index:
             time.sleep(1.2)
@@ -984,10 +1069,13 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                         f"{response.text[:250]}"
                     )
                     if response.status_code == 429:
+                        with PNCP_COOLDOWN_LOCK:
+                            PNCP_COOLDOWN_UNTIL = time.monotonic() + PNCP_COOLDOWN_SECONDS
                         diagnostic["note"] = (
-                            "Limite de pedidos do PNCP atingido; "
-                            "a fonte será tentada novamente na próxima pesquisa."
+                            "Limite de pedidos do PNCP atingido. As restantes modalidades "
+                            "foram suspensas e a fonte ficará em pausa durante 15 minutos."
                         )
+                        rate_limited = True
                     break
 
                 payload = response.json()
@@ -1160,6 +1248,8 @@ def query_brazil(term, diagnostics=None, search_mode="direct"):
                 )
 
             diagnostics.append(diagnostic)
+            if rate_limited:
+                break
 
         except Exception as exc:
             diagnostics.append({
@@ -1194,12 +1284,15 @@ def automatic_search(query, diagnostics, country_code=None):
         results.extend(query_ted(term, diagnostics, mode, country_code))
 
     # PNCP apenas uma vez por pesquisa; a função percorre modalidades oficiais válidas.
+    # SECOP é consultado sequencialmente para evitar picos concorrentes no Socrata.
+    for term in secop_terms:
+        results.extend(query_secop(term, diagnostics, mode))
+
     jobs = [(query_world_bank, term, mode) for term in wb_terms]
-    jobs += [(query_secop, term, mode) for term in secop_terms]
     jobs += [(query_brazil, brazil_term, mode)]
     if country_code in (None, "ECU"):
         jobs += [(query_ecuador, brazil_term, mode)]
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [executor.submit(fn, term, diagnostics, job_mode) for fn, term, job_mode in jobs]
         for future in as_completed(futures):
             try:
@@ -1269,7 +1362,7 @@ def json_ascii_response(payload):
 
 @app.get("/health")
 def health():
-    return json_ascii_response({"ok": True, "version": "2.9.5", "sources": len(SOURCES),
+    return json_ascii_response({"ok": True, "version": "2.9.6", "sources": len(SOURCES),
             "api_sources": sum(1 for source in SOURCES if source.get("automatic")),
             "manual_portals": sum(1 for source in SOURCES if not source.get("automatic")),
             "period_days": PERIOD_DAYS, "ted_page_size": PAGE_SIZE,
@@ -1305,7 +1398,7 @@ def api_search(q: str = Query(default="archaeology"),
         failed_diagnostics = [d for d in diagnostics if d.get("error") or (d.get("status_code") not in (None, 200))]
         consulted_automatic_sources = sorted({d.get("source") for d in successful_diagnostics if d.get("source") in automatic_source_names})
         failed_automatic_sources = sorted({d.get("source") for d in failed_diagnostics if d.get("source") in automatic_source_names})
-        return json_ascii_response({"ok": True, "version": "2.9.5", "query": q, "mode": mode,
+        return json_ascii_response({"ok": True, "version": "2.9.6", "query": q, "mode": mode,
                 "results": results, "count": len(results), "sources": source_names,
                 "source_count": len(source_names), "regions": regions, "diagnostics": diagnostics,
                 "automatic_sources_consulted": consulted_automatic_sources,
@@ -1313,7 +1406,7 @@ def api_search(q: str = Query(default="archaeology"),
                 "automatic_sources_failed": failed_automatic_sources,
                 "automatic_sources_failed_count": len(failed_automatic_sources)})
     except Exception as exc:
-        return json_ascii_response({"ok": False, "version": "2.9.5", "error": str(exc),
+        return json_ascii_response({"ok": False, "version": "2.9.6", "error": str(exc),
                 "error_type": type(exc).__name__, "query": q, "diagnostics": diagnostics})
 
 
